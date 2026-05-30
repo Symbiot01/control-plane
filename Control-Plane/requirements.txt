@@ -1,0 +1,23 @@
+# Control Plane Phase 1 – dependencies
+# Python 3.11+
+
+# Core
+fastapi>=0.115.0
+uvicorn[standard]>=0.32.0
+python-multipart>=0.0.12
+
+# Database
+sqlalchemy[asyncio]>=2.0.0
+asyncpg>=0.30.0
+alembic>=1.14.0
+
+# Cache
+redis>=5.2.0
+
+# Auth
+firebase-admin>=6.6.0
+pyjwt[crypto]>=2.10.0
+cryptography>=44.0.0
+
+# Config
+pydantic-settings>=2.6.0
