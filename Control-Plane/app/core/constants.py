@@ -1,0 +1,51 @@
+"""Shared constants for org status, tier, roles, and quota periods."""
+
+# Organization status
+ORG_STATUS_ACTIVE = "active"
+ORG_STATUS_SUSPENDED = "suspended"
+ORG_STATUS_ARCHIVED = "archived"
+ORG_STATUSES = (ORG_STATUS_ACTIVE, ORG_STATUS_SUSPENDED, ORG_STATUS_ARCHIVED)
+
+# Organization tier
+TIER_STARTER = "starter"
+TIERS = (TIER_STARTER,)  # Extend as needed
+
+# Roles (organization_members)
+ROLE_OWNER = "owner"
+ROLE_MEMBER = "member"
+ROLES = (ROLE_OWNER, ROLE_MEMBER)
+
+# Quota period
+PERIOD_PER_MINUTE = "per_minute"
+PERIOD_PER_HOUR = "per_hour"
+PERIOD_PER_DAY = "per_day"
+PERIOD_PER_MONTH = "per_month"
+PERIOD_LIFETIME = "lifetime"
+PERIODS = (PERIOD_PER_MINUTE, PERIOD_PER_HOUR, PERIOD_PER_DAY, PERIOD_PER_MONTH, PERIOD_LIFETIME)
+
+# Default API rate limit (requests per minute per org)
+RATE_LIMIT_PER_MINUTE = 120
+
+# Subscription status
+SUBSCRIPTION_STATUS_ACTIVE = "active"
+SUBSCRIPTION_STATUS_CANCELED = "canceled"
+SUBSCRIPTION_STATUS_PAST_DUE = "past_due"
+SUBSCRIPTION_STATUS_TRIALING = "trialing"
+SUBSCRIPTION_STATUSES = (
+    SUBSCRIPTION_STATUS_ACTIVE,
+    SUBSCRIPTION_STATUS_CANCELED,
+    SUBSCRIPTION_STATUS_PAST_DUE,
+    SUBSCRIPTION_STATUS_TRIALING,
+)
+
+# Invoice status
+INVOICE_STATUS_DRAFT = "draft"
+INVOICE_STATUS_SENT = "sent"
+INVOICE_STATUS_PAID = "paid"
+INVOICE_STATUS_OVERDUE = "overdue"
+INVOICE_STATUSES = (
+    INVOICE_STATUS_DRAFT,
+    INVOICE_STATUS_SENT,
+    INVOICE_STATUS_PAID,
+    INVOICE_STATUS_OVERDUE,
+)
