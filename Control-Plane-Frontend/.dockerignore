@@ -1,0 +1,14 @@
+node_modules
+dist
+dist-ssr
+.git
+.gitignore
+*.log
+.env
+.env.*
+!.env.example
+.lovable
+coverage
+playwright-report
+test-results
+README.md
