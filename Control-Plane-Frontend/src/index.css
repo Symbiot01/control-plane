@@ -1,0 +1,163 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Retro Beige Light Theme */
+    --background: 41 21% 88%; /* #e3dfd8 */
+    --foreground: 222 47% 11%; /* #111827 */
+    --card: 43 33% 91%; /* #ede9e1 */
+    --card-foreground: 222 47% 11%;
+    --popover: 43 33% 91%;
+    --popover-foreground: 222 47% 11%;
+    --muted: 42 27% 84%; /* #e0dbce */
+    --muted-foreground: 215 16% 47%;
+    --border: 222 47% 11%;
+    --input: 222 47% 11%;
+    --ring: 222 47% 11%;
+    --primary: 219 36% 42%; /* inverse-primary from spec */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 42 27% 84%;
+    --secondary-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    
+    --sidebar-background: 43 33% 91%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 219 36% 42%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 42 27% 84%;
+    --sidebar-accent-foreground: 222 47% 11%;
+    --sidebar-border: 222 47% 11%;
+    --sidebar-ring: 222 47% 11%;
+  }
+
+  .dark {
+    /* Darker, less blue Dark Theme */
+    --background: 210 25% 2%; /* #030405 */
+    --foreground: 226 100% 93%; /* #dde5ff */
+    --card: 220 16% 4%; /* #08090b */
+    --card-foreground: 226 100% 93%;
+    --popover: 225 16% 5%; /* #0a0b0e */
+    --popover-foreground: 226 100% 93%;
+    --muted: 225 18% 9%; /* #12141a */
+    --muted-foreground: 223 33% 70%; /* #9eabcb */
+    --border: 223 11% 19%; /* #2a2d35 */
+    --input: 223 11% 19%;
+    --ring: 221 100% 87%; /* #bed2ff */
+    --primary: 221 100% 87%; /* #bed2ff */
+    --primary-foreground: 218 47% 32%; /* #2b4778 */
+    --secondary: 151 18% 75%; /* #b3ccc0 */
+    --secondary-foreground: 153 20% 23%; /* #2e453b */
+    --destructive: 3 100% 71%; /* #ff716c */
+    --destructive-foreground: 355 100% 14%; /* #490006 */
+    
+    --sidebar-background: 220 23% 3%; /* #050608 */
+    --sidebar-foreground: 226 100% 93%;
+    --sidebar-primary: 221 100% 87%;
+    --sidebar-primary-foreground: 218 47% 32%;
+    --sidebar-accent: 225 18% 9%;
+    --sidebar-accent-foreground: 226 100% 93%;
+    --sidebar-border: 223 11% 19%;
+    --sidebar-ring: 221 100% 87%;
+  }
+
+  .theme-org {
+    /* Custom Theme for Org Dashboard - Light Mode */
+    --background: 300 3% 86%; /* #DBD9DB */
+    --foreground: 209 65% 10%; /* #091A2A */
+    --card: 300 6% 93%; /* #EFEDEF */
+    --card-foreground: 209 65% 10%;
+    --muted: 240 1% 47%; /* #777778 */
+    --muted-foreground: 209 65% 10%;
+    --primary: 209 65% 10%; /* #091A2A */
+    --primary-foreground: 45 20% 89%; /* #E8E5DC */
+    --border: 209 65% 10%;
+    --ring: 209 65% 10%;
+  }
+
+  .theme-org.dark, .dark .theme-org {
+    /* Custom Theme for Org Dashboard - Dark Mode */
+    --background: 240 5% 8%; /* #131315 */
+    --foreground: 225 7% 78%; /* #C4C6CC */
+    --card: 210 3% 13%; /* #1F2021 */
+    --card-foreground: 225 7% 78%;
+    --muted: 240 1% 47%; /* #777778 */
+    --muted-foreground: 225 7% 78%;
+    --primary: 330 4% 89%; /* #E4E2E3 */
+    --primary-foreground: 209 65% 10%; /* #091A2A */
+    --border: 210 3% 25%; /* #3F4042 - dark gray */
+    --ring: 330 4% 89%;
+  }
+}
+
+@layer base {
+  html {
+    font-size: 120%;
+    overflow: hidden;
+    height: 100%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-body-md antialiased;
+    font-family: 'Inter', sans-serif;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow: hidden;
+    height: 100%;
+  }
+
+  #root {
+    height: 100%;
+    overflow: auto;
+  }
+
+  /* Ensure default text, placeholders, and SVG icons adopt the dark foreground */
+  .dark *:not([class*="text-"]):not([class*="bg-"]):not([class*="border-"]) {
+    color: hsl(var(--foreground)) !important;
+  }
+  .dark ::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+  .dark .fill-current, .dark svg {
+    fill: hsl(var(--foreground)) !important;
+  }
+  
+}
+
+@layer components {
+  /* Retro Heavy Brutalist overrides for standard components */
+  .bg-card, .bg-popover, [role="dialog"], [role="menu"] {
+    @apply border-2 border-slate-900 dark:border-border shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:shadow-[2px_2px_0px_0px_rgba(30,30,40,1)] rounded-none text-foreground !important;
+  }
+
+  .neo-brutal-input {
+    @apply flex h-10 w-full border-2 border-slate-900 dark:border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-none shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:shadow-[2px_2px_0px_0px_rgba(30,30,40,1)] transition-all duration-200;
+  }
+  
+  .neo-brutal-input:focus {
+    @apply translate-y-[1px] shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] dark:shadow-[1px_1px_0px_0px_rgba(30,30,40,1)];
+  }
+
+  .neo-brutal-button {
+    @apply inline-flex items-center justify-center whitespace-nowrap bg-primary text-primary-foreground border-2 border-slate-900 dark:border-border rounded-none px-4 py-2 text-sm font-medium transition-all duration-200 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] dark:shadow-[4px_4px_0px_0px_rgba(30,30,40,1)] hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .neo-brutal-button:active {
+    @apply translate-y-1 shadow-none;
+  }
+
+  .neo-brutal-button-outline {
+    @apply inline-flex items-center justify-center whitespace-nowrap border-2 border-slate-900 dark:border-border bg-transparent text-foreground rounded-none px-4 py-2 text-sm font-medium transition-all duration-200 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] dark:shadow-[4px_4px_0px_0px_rgba(30,30,40,1)] hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .neo-brutal-button-outline:active {
+    @apply translate-y-1 shadow-none;
+  }
+}
