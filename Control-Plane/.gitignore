@@ -10,3 +10,8 @@ build/
 .cursor/
 org-nexus-console/
 test_frontend/
+# Logs
+*.log
+error.log
+# Temporary keys or credentials
+tmp_keys/
