@@ -13,7 +13,7 @@ import sys
 # Ensure the root of the project is in PYTHONPATH
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from app.core.config import settings
+from app.core.config import settings, asyncpg_connect_args_for_sslmode
 import app.models  # Imports all models and populates Base.metadata
 from app.db.base import Base
 
@@ -21,8 +21,10 @@ from app.db.base import Base
 # access to the values within the .ini file in use.
 config = context.config
 
-# Dynamically override the sqlalchemy.url in alembic.ini with our actual settings
-config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
+# NOTE: We do NOT use config.set_main_option("sqlalchemy.url", ...)
+# because configparser treats '%' as interpolation syntax, which breaks
+# URL-encoded passwords (e.g. %3D, %40). Instead we pass the URL directly
+# when creating the engine below.
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -49,9 +51,8 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        url=url,
+        url=settings.DATABASE_URL,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -75,9 +76,10 @@ async def run_async_migrations() -> None:
     """
 
     connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        {"sqlalchemy.url": settings.DATABASE_URL},
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=asyncpg_connect_args_for_sslmode(settings.POSTGRES_SSLMODE),
     )
 
     async with connectable.connect() as connection:
