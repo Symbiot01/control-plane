@@ -91,6 +91,16 @@ def _parse_gcp_service_account_env(v: Any) -> dict[str, Any]:
             raise ValueError(
                 "GCP_SERVICE_ACCOUNT_JSON is empty; set the full service account JSON."
             )
+        
+        # Aggressively strip surrounding quotes injected by env loaders like Coolify
+        if s.startswith("'") and s.endswith("'"):
+            s = s[1:-1]
+        elif s.startswith('"') and s.endswith('"'):
+            s = s[1:-1]
+        
+        # Unescape any escaped quotes
+        s = s.replace('\\"', '"').replace("\\'", "'")
+        
         try:
             data = json.loads(s)
         except json.JSONDecodeError:
