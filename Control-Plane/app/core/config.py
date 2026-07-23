@@ -92,20 +92,22 @@ def _parse_gcp_service_account_env(v: Any) -> dict[str, Any]:
                 "GCP_SERVICE_ACCOUNT_JSON is empty; set the full service account JSON."
             )
         
-        # Aggressively strip surrounding quotes injected by env loaders like Coolify
-        if s.startswith("'") and s.endswith("'"):
-            s = s[1:-1]
-        elif s.startswith('"') and s.endswith('"'):
-            s = s[1:-1]
+        # Coolify and Docker pass environment variables through multiple layers of
+        # escaping, which can result in weird quotes and backslashes around the string.
+        # Since we know this must be a JSON object, the most bulletproof way to clean
+        # it is to just extract everything from the first '{' to the last '}'.
+        start = s.find('{')
+        end = s.rfind('}')
+        if start != -1 and end != -1:
+            s = s[start:end+1]
         
-        # Unescape any escaped quotes
-        s = s.replace('\\"', '"').replace("\\'", "'")
+        # Now s is just the JSON body, but we still need to unescape any inner quotes
+        # or newlines that Docker might have escaped.
+        s = s.replace('\\"', '"').replace("\\'", "'").replace('\\n', '\n')
         
         try:
             data = json.loads(s)
         except json.JSONDecodeError:
-            # Coolify / some env loaders may store JSON-like dicts with single quotes.
-            # As a fallback, parse them as a Python literal.
             try:
                 data = ast.literal_eval(s)
             except (ValueError, SyntaxError) as e:
