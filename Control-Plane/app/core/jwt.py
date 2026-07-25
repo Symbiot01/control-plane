@@ -10,20 +10,26 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key, l
 from app.core.config import settings
 
 
-def _private_key_bytes() -> bytes:
-    """PEM private key as bytes (handle \\n in env)."""
-    s = settings.JWT_PRIVATE_KEY
+def _clean_pem_string(s: str) -> bytes:
+    """Clean up Coolify injected quotes/backslashes and handle literal \\n."""
     if "\\n" in s:
         s = s.replace("\\n", "\n")
+    # Extract only the PEM block to ignore injected garbage at the edges
+    start = s.find("-----BEGIN")
+    end = s.rfind("-----")
+    if start != -1 and end != -1:
+        s = s[start:end+5]
     return s.encode("utf-8")
+
+
+def _private_key_bytes() -> bytes:
+    """PEM private key as bytes."""
+    return _clean_pem_string(settings.JWT_PRIVATE_KEY)
 
 
 def _public_key_bytes() -> bytes:
     """PEM public key as bytes."""
-    s = settings.JWT_PUBLIC_KEY
-    if "\\n" in s:
-        s = s.replace("\\n", "\n")
-    return s.encode("utf-8")
+    return _clean_pem_string(settings.JWT_PUBLIC_KEY)
 
 
 def _int_to_b64url(n: int) -> str:
