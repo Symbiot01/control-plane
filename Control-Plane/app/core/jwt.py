@@ -11,20 +11,32 @@ from app.core.config import settings
 
 
 def _clean_pem_string(s: str, is_private: bool = True) -> bytes:
-    """Clean up Coolify injected quotes/backslashes and handle literal \\n."""
-    if "\\n" in s:
-        s = s.replace("\\n", "\n")
+    import re
+    header_match = re.search(r'-----BEGIN.*?-----', s)
+    footer_match = re.search(r'-----END.*?-----', s)
     
-    start = s.find("-----BEGIN")
-    end = s.rfind("-----")
-    
-    if start == -1 or end == -1:
-        # If it doesn't contain the header, throw a massive red flag so we can see what Coolify is actually injecting
+    if not header_match or not footer_match:
         header_type = "PRIVATE" if is_private else "PUBLIC"
-        raise ValueError(f"CRITICAL ERROR: Your {header_type} KEY in Coolify does NOT contain '-----BEGIN'! It actually starts with exactly this: {repr(s[:50])}")
+        raise ValueError(f"CRITICAL ERROR: Your {header_type} KEY is missing headers/footers. Starts with: {repr(s[:50])}")
         
-    s = s[start:end+5]
-    return s.encode("utf-8")
+    header = header_match.group(0)
+    footer = footer_match.group(0)
+    
+    payload = s[header_match.end():footer_match.start()]
+    
+    # Strip literal \n (two chars) so 'n' doesn't stay behind as base64
+    payload = payload.replace("\\n", "")
+    payload = payload.replace("\\r", "")
+    
+    # Strip everything that is not valid base64
+    clean_payload = re.sub(r'[^A-Za-z0-9+/=]', '', payload)
+    
+    # Rebuild PEM
+    lines = [clean_payload[i:i+64] for i in range(0, len(clean_payload), 64)]
+    payload_formatted = "\n".join(lines)
+    
+    perfect_pem = f"{header}\n{payload_formatted}\n{footer}"
+    return perfect_pem.encode("utf-8")
 
 
 def _private_key_bytes() -> bytes:
