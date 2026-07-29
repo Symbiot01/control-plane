@@ -14,6 +14,7 @@ from app.core.dependencies import (
     rate_limit_per_org,
     require_org_owner_for_path,
     require_org_member_for_path,
+    require_control_jwt,
 )
 from app.db.session import get_db
 from app.core.config import settings
@@ -27,6 +28,7 @@ from app.schemas.organization import (
     OrganizationCreate,
     OrganizationUpdate,
     OrganizationProductResponse,
+    OrganizationProductAccessResponse,
     OrganizationResponse,
     OrganizationWithRole,
     UpdateMemberRoleRequest,
@@ -96,6 +98,54 @@ async def get_organization_products(
     return products
 
 
+@router.get("/my-access/{product_key}", response_model=OrganizationProductAccessResponse)
+async def get_my_product_access(
+    product_key: str,
+    payload: Annotated[dict, Depends(require_control_jwt)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Check if the currently authenticated user's organization has access to a specific product."""
+    org_id_str = payload.get("org_id")
+    if not org_id_str:
+        return OrganizationProductAccessResponse(
+            has_access=False,
+            reason="This is a guest account with no access. Please create or join an organization.",
+            expires_at=None,
+        )
+
+    try:
+        org_id = UUID(org_id_str)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid organization ID format in token")
+
+    from app.models.organization_entitlement import OrganizationEntitlement
+    from app.models.product import Product
+
+    result = await db.execute(
+        select(OrganizationEntitlement)
+        .join(Product, OrganizationEntitlement.product_id == Product.id)
+        .where(
+            OrganizationEntitlement.organization_id == org_id,
+            Product.product_key == product_key,
+            Product.is_active == True
+        )
+    )
+    entitlement = result.scalars().first()
+
+    if not entitlement:
+        return OrganizationProductAccessResponse(
+            has_access=False,
+            reason="Your organization does not have access to this product.",
+            expires_at=None,
+        )
+
+    return OrganizationProductAccessResponse(
+        has_access=True,
+        reason="Access granted.",
+        expires_at=entitlement.expires_at,
+    )
+
+
 @router.get("/{org_id}", response_model=OrganizationResponse)
 async def get_organization_by_id(
     org_id: UUID,
@@ -149,6 +199,8 @@ async def post_organizations_invite(
     """Invite member by email (admin/owner only)."""
     if body.role not in ROLES:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid role")
+        
+    body.email = body.email.lower()
         
     existing_invite = await db.execute(
         select(OrganizationInvite)

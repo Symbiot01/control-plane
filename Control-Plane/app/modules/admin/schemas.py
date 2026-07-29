@@ -305,13 +305,14 @@ class AdminActionCreate(BaseModel):
 
 
 class AdminActionUpdate(BaseModel):
-    """Partial action update (currently supports soft-enable/disable + metadata)."""
+    """Partial action update (currently supports soft-enable/disable + metadata + pricing)."""
 
     domain: str | None = Field(None, min_length=1)
     unit_type: str | None = Field(None, min_length=1)
     description: str | None = None
     is_active: bool | None = None
     product_id: UUID | None = None
+    rate_cents_per_compute_unit: int | None = Field(None, ge=0)
 
 
 # --- Global Members ---

@@ -41,6 +41,12 @@ class OrganizationProductResponse(BaseModel):
     max_compute_units: int | None
 
 
+class OrganizationProductAccessResponse(BaseModel):
+    has_access: bool
+    reason: str = Field(..., description="Explanation of the access state")
+    expires_at: datetime | None = None
+
+
 class OrganizationResponse(BaseModel):
     """Organization in API responses."""
 

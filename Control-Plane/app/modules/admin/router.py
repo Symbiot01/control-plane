@@ -1212,6 +1212,20 @@ async def update_action_admin(
 
     if updates:
         await db.execute(update(QuotaAction).where(QuotaAction.id == action.id).values(**updates))
+        
+    if body.rate_cents_per_compute_unit is not None:
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        price = QuotaActionPrice(
+            id=uuid4(),
+            action_id=action.id,
+            rate_cents_per_compute_unit=body.rate_cents_per_compute_unit,
+            effective_from=now,
+            created_at=now,
+        )
+        db.add(price)
+        await db.flush()
+
+    if updates or body.rate_cents_per_compute_unit is not None:
         await db.commit()
         await log_admin_action(db, admin.id, "action.update", "action", action.id, detail=action.action_key)
         await db.refresh(action)
@@ -1511,6 +1525,7 @@ async def create_organization_invite(
     body: OrganizationInviteCreate,
 ) -> OrganizationInviteResponse:
     """Create an organization invite ticket."""
+    body.email = body.email.lower()
     existing_invite = await db.execute(
         select(OrganizationInvite)
         .where(
