@@ -60,6 +60,7 @@ async def auth_exchange(
     try:
         decoded = verify_id_token(body.id_token)
     except Exception as e:
+        print(f"FIREBASE TOKEN VERIFICATION FAILED: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid Firebase token",
