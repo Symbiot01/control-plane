@@ -138,7 +138,8 @@ export default {
         "title-md": ["Inter"],
         "body-md": ["Inter"],
         "body-sm": ["Inter"],
-        "label-md": ["Inter"]
+        "label-md": ["Inter"],
+        "cursive": ["Dancing Script", "cursive"]
       },
       fontSize: {
         "display-lg": ["3.5rem", { lineHeight: "4rem", letterSpacing: "-0.02em", fontWeight: "700" }],

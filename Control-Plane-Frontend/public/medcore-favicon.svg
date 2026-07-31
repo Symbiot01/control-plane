@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none" stroke="url(#medcore-grad)" stroke-width="16" stroke-linecap="square" stroke-linejoin="miter">
+  <defs>
+    <linearGradient id="medcore-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9ca3af" />
+      <stop offset="100%" stop-color="#facc15" />
+    </linearGradient>
+  </defs>
+  <path d="M 20 80 L 20 20 L 50 50 L 80 20 L 80 80" />
+</svg>
