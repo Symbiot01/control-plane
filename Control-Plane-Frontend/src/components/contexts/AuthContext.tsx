@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return res;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Token exchange failed';
-      setState({ user, token: null, levelOfAccess: null, hasPendingInvites: false, loading: false, error: message });
+      setState({ user, token: null, levelOfAccess: 'guest', hasPendingInvites: false, loading: false, error: message });
       setAuthToken(null);
     }
   }, []);

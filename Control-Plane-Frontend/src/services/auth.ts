@@ -4,7 +4,6 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
 export async function exchangeToken(idToken: string, displayName?: string | null): Promise<AuthExchangeResponse> {
   const payload: any = { id_token: idToken };
-  if (displayName) payload.display_name = displayName;
   const res = await fetch(`${API_BASE}/auth/exchange`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

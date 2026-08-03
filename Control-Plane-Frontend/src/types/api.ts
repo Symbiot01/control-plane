@@ -310,6 +310,10 @@ export interface ActionResponse {
   name: string;
   action_key: string;
   product_id: string;
+  domain?: string;
+  unit_type?: string;
+  description?: string;
+  rate_cents_per_compute_unit?: number;
   is_active: boolean;
   created_at: string;
 }
@@ -325,7 +329,10 @@ export interface ActionCreate {
 export interface ActionUpdate {
   name?: string;
   action_key?: string;
+  domain?: string;
+  description?: string;
   is_active?: boolean;
+  rate_cents_per_compute_unit?: number;
 }
 
 export interface InviteDetailResponse {
@@ -343,6 +350,7 @@ export interface PendingInviteResponse {
   role: string;
   status: string;
   created_at: string;
+  organization_id?: string | null;
 }
 
 export interface AcceptInviteRequest {

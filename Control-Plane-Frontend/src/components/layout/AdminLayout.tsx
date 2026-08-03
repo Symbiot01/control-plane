@@ -25,7 +25,9 @@ export function AdminLayout() {
         <div className="flex items-center gap-md">
           <div className="flex items-center gap-sm">
             <span className="material-symbols-outlined text-primary cursor-pointer hover:bg-muted rounded-full p-2 transition-colors">menu</span>
-            <span className="font-headline-lg text-headline-lg text-primary tracking-tight hidden md:block">Control_Plane</span>
+            <span className="font-headline-lg text-headline-lg text-primary tracking-tight hidden md:flex items-center">
+              <span className="font-cursive text-4xl leading-none">C</span>ontrolPlane
+            </span>
           </div>
 
         </div>
