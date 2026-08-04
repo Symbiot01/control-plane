@@ -92,6 +92,20 @@ export default function RoleDashboard() {
     }
   });
 
+  useEffect(() => {
+    document.title = 'Medcore';
+    const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
+    (link as any).type = 'image/svg+xml';
+    (link as any).rel = 'icon';
+    (link as any).href = '/medcore-favicon.svg?v=2';
+    document.getElementsByTagName('head')[0].appendChild(link);
+    
+    return () => {
+      document.title = 'ControlPlane';
+      (link as any).href = '/favicon.svg';
+    };
+  }, []);
+
   return (
     <div className="theme-org flex h-full w-full bg-background text-foreground font-body-md overflow-hidden transition-colors duration-200">
       {/* Sidebar */}
@@ -115,10 +129,14 @@ export default function RoleDashboard() {
         <nav className="flex-1 py-lg px-md space-y-sm overflow-y-auto overflow-x-hidden min-h-0">
           <NavItem icon="dashboard" label="Dashboard" active={activeTab === 'Dashboard'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Dashboard')} />
           <NavItem icon="apps" label="Products" active={activeTab === 'Products'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Products')} />
-          <NavItem icon="group" label="Members" active={activeTab === 'Members'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Members')} />
-          <NavItem icon="receipt_long" label="Billing" active={activeTab === 'Billing'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Billing')} />
-          <NavItem icon="history" label="Audit Log" active={activeTab === 'Audit Log'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Audit Log')} />
-          <NavItem icon="settings" label="Settings" active={activeTab === 'Settings'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Settings')} />
+          {levelOfAccess !== 'member' && (
+            <>
+              <NavItem icon="group" label="Members" active={activeTab === 'Members'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Members')} />
+              <NavItem icon="receipt_long" label="Billing" active={activeTab === 'Billing'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Billing')} />
+              <NavItem icon="history" label="Audit Log" active={activeTab === 'Audit Log'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Audit Log')} />
+              <NavItem icon="settings" label="Settings" active={activeTab === 'Settings'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Settings')} />
+            </>
+          )}
         </nav>
 
         <div className={`p-3 border-t-2 border-border shrink-0 flex ${isSidebarCollapsed ? 'flex-col' : 'flex-row'} justify-center items-center gap-3`}>

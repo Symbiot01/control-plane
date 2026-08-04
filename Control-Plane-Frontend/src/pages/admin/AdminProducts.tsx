@@ -41,8 +41,10 @@ function ServiceDialog({
   const [formData, setFormData] = useState({
     name: actionToEdit?.name || '',
     action_key: actionToEdit?.action_key || '',
-    domain: '',
-    unit_type: '',
+    domain: actionToEdit?.domain || '',
+    unit_type: actionToEdit?.unit_type || '',
+    description: actionToEdit?.description || '',
+    rate_cents_per_compute_unit: actionToEdit?.rate_cents_per_compute_unit?.toString() || '0',
     is_active: actionToEdit ? actionToEdit.is_active : true,
   });
 
@@ -75,8 +77,8 @@ function ServiceDialog({
       updateMut.mutate({
         key: formData.action_key,
         data: {
-          name: formData.name,
-          action_key: formData.action_key,
+          description: formData.description || undefined,
+          rate_cents_per_compute_unit: parseInt(formData.rate_cents_per_compute_unit, 10) || 0,
           is_active: formData.is_active
         }
       });
@@ -103,52 +105,85 @@ function ServiceDialog({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           
-          <div className="space-y-2">
-            <Label htmlFor="name">Service Name</Label>
+          {!actionToEdit && (
+            <>
+              <div className="space-y-2">
+                <Label htmlFor="name">Service Name</Label>
                 <Input
                   id="name"
                   placeholder="e.g. OCR Processing"
                   value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  onChange={(e) => {
+                    const newName = e.target.value;
+                    const newKey = newName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+                    setFormData({ ...formData, name: newName, action_key: newKey });
+                  }}
                   required
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="key">Service Key (Action Key)</Label>
+                <Label htmlFor="key">Service Key</Label>
                 <Input
                   id="key"
-                  placeholder="e.g. ocr_processing"
+                  placeholder="auto-generated"
                   value={formData.action_key}
-                  onChange={(e) => setFormData({ ...formData, action_key: e.target.value })}
+                  readOnly
+                  className="bg-muted/50 text-muted-foreground font-mono text-xs"
+                />
+                <p className="text-[10px] text-muted-foreground">Auto-generated from the service name.</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="domain">Domain</Label>
+                <Input
+                  id="domain"
+                  placeholder="e.g. compute, storage"
+                  value={formData.domain}
+                  onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
                   required
-                  disabled={!!actionToEdit}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="unit_type">Unit Type</Label>
+                <Input
+                  id="unit_type"
+                  placeholder="e.g. gigabytes, requests"
+                  value={formData.unit_type}
+                  onChange={(e) => setFormData({ ...formData, unit_type: e.target.value })}
+                  required
+                />
+              </div>
+            </>
+          )}
+              
+              <div className="space-y-2">
+                <Label htmlFor="description">Description (optional)</Label>
+                <Textarea
+                  id="description"
+                  placeholder="Brief description of this service..."
+                  value={formData.description}
+                  onChange={(e) => setFormData({ ...formData, description: e.target.value })}
                 />
               </div>
 
-              {!actionToEdit && (
-                <>
-                  <div className="space-y-2">
-                    <Label htmlFor="domain">Domain</Label>
-                    <Input
-                      id="domain"
-                      placeholder="e.g. compute, storage"
-                      value={formData.domain}
-                      onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="unit_type">Unit Type</Label>
-                    <Input
-                      id="unit_type"
-                      placeholder="e.g. gigabytes, requests"
-                      value={formData.unit_type}
-                      onChange={(e) => setFormData({ ...formData, unit_type: e.target.value })}
-                      required
-                    />
-                  </div>
-                </>
-              )}
+              <div className="space-y-2">
+                <div className="flex items-center gap-1.5">
+                  <Label htmlFor="price">Price Rate</Label>
+                  <Badge variant="outline" className="text-[10px] font-mono text-muted-foreground">cents / compute unit</Badge>
+                </div>
+                <div className="relative">
+                  <span className="absolute left-3 top-2.5 text-muted-foreground text-sm">¢</span>
+                  <Input
+                    id="price"
+                    type="number"
+                    min="0"
+                    className="pl-7"
+                    placeholder="0"
+                    value={formData.rate_cents_per_compute_unit}
+                    onChange={(e) => setFormData({ ...formData, rate_cents_per_compute_unit: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
               
               {actionToEdit && (
                 <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
@@ -167,7 +202,7 @@ function ServiceDialog({
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isPending || !formData.name || !formData.action_key}>
+            <Button type="submit" disabled={isPending || (!actionToEdit && (!formData.name || !formData.action_key))}>
               {actionToEdit ? 'Save Changes' : 'Create Service'}
             </Button>
           </div>
@@ -321,8 +356,8 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
 
   return (
     <>
-      <Card className="flex flex-col h-full relative min-h-[280px] shadow-sm hover:shadow-md transition-shadow group/card">
-        <CardHeader className="pb-4 border-b border-border/10 bg-muted/5">
+      <Card className="flex flex-col h-[380px] shadow-sm hover:shadow-md transition-shadow group/card overflow-hidden">
+        <CardHeader className="pb-4 border-b border-border/10 bg-muted/5 shrink-0">
           <div className="flex items-start justify-between">
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center gap-2 flex-wrap">
@@ -365,15 +400,15 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
             </div>
           </div>
         </CardHeader>
-        <CardContent className="flex-1 flex flex-col gap-5 pt-5">
+        <CardContent className="flex-1 flex flex-col gap-4 pt-5 overflow-hidden">
           {product.description && (
-            <p className="text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed">
+            <p className="text-sm text-muted-foreground/80 line-clamp-2 leading-relaxed shrink-0">
               {product.description}
             </p>
           )}
 
-          <div className="flex flex-col gap-2 flex-1">
-            <div className="flex items-center justify-between pb-1">
+          <div className="flex flex-col gap-2 flex-1 overflow-hidden">
+            <div className="flex items-center justify-between pb-1 shrink-0">
               <h4 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
                 Services ({productActions.length})
               </h4>
@@ -382,7 +417,7 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
               </Button>
             </div>
             
-            <div className="space-y-0.5 flex-1">
+            <div className="space-y-0.5 flex-1 overflow-y-auto pr-1">
               {productActions.length === 0 ? (
                 <div className="text-xs text-muted-foreground/50 italic py-2">
                   No services configured.

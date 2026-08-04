@@ -21,7 +21,21 @@ export default function OrganizationCreation() {
       try {
         const data = await apiClient<PendingInviteResponse[]>('/invites/me/pending');
         if (data && data.length > 0) {
-          setInviteId(data[0].id);
+          const invite = data[0];
+          setInviteId(invite.id);
+          
+          // NEW: Check if the invite already belongs to an organization (Member Invite)
+          if (invite.organization_id !== null) {
+            // Automatically accept the invite without showing the form
+            await apiClient<void>(`/invites/${invite.id}/accept`, {
+              method: 'POST',
+              body: JSON.stringify({}),
+            });
+            // Force a hard reload to refresh the Firebase token exchange and get the org_id
+            window.location.href = '/overview';
+            return;
+          }
+          
         } else {
           // No pending invites found, this shouldn't happen based on the previous redirect,
           // but if it does, send them to overview.
@@ -30,6 +44,7 @@ export default function OrganizationCreation() {
       } catch (err: any) {
         setError(err.message || 'Failed to check pending invites.');
       } finally {
+        // Only stop loading if we are actually going to show the org name form
         setLoading(false);
       }
     };
@@ -49,9 +64,8 @@ export default function OrganizationCreation() {
         method: 'POST',
         body: JSON.stringify({ organization_name: orgName.trim() } as AcceptInviteRequest),
       });
-      // Force reload to update org context and roles if needed, or rely on existing state.
-      // A standard redirect will hit StandardGate which might refetch data.
-      navigate('/overview', { replace: true });
+      // Force a hard reload to refresh the Firebase token exchange and get the org_id
+      window.location.href = '/overview';
     } catch (err: any) {
       setError(err.message || 'Failed to create organization.');
       setSubmitting(false);
