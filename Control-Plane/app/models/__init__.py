@@ -20,6 +20,7 @@ from app.models.quota_check_request import QuotaCheckRequest
 from app.models.usage_ledger import UsageLedger
 
 from app.models.product import Product
+from app.models.quota_usage_bucket import QuotaReservationAllocation, QuotaUsageBucket
 from app.modules.admin.models import SuperAdmin, SuperAdminAuditLog
 
 __all__ = [
@@ -39,6 +40,8 @@ __all__ = [
     "CreditLedger",
     "QuotaActionPrice",
     "QuotaCheckRequest",
+    "QuotaUsageBucket",
+    "QuotaReservationAllocation",
     "AuditLog",
     "Product",
     "SuperAdmin",

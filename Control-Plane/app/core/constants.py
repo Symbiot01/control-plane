@@ -49,3 +49,32 @@ INVOICE_STATUSES = (
     INVOICE_STATUS_PAID,
     INVOICE_STATUS_OVERDUE,
 )
+
+# Quota request lifecycle (quota_check_requests.status)
+QUOTA_STATUS_PENDING = "pending"
+QUOTA_STATUS_HELD = "held"
+QUOTA_STATUS_COMMITTED = "committed"
+QUOTA_STATUS_DENIED = "denied"
+QUOTA_STATUS_ROLLED_BACK = "rolled_back"
+QUOTA_STATUS_EXPIRED = "expired"
+QUOTA_STATUSES = (
+    QUOTA_STATUS_PENDING,
+    QUOTA_STATUS_HELD,
+    QUOTA_STATUS_COMMITTED,
+    QUOTA_STATUS_DENIED,
+    QUOTA_STATUS_ROLLED_BACK,
+    QUOTA_STATUS_EXPIRED,
+)
+
+# Metering operation kinds
+QUOTA_OP_CHECK = "check"
+QUOTA_OP_RESERVE = "reserve"
+QUOTA_OPS = (QUOTA_OP_CHECK, QUOTA_OP_RESERVE)
+
+# Terminal statuses that must not start new work for the same request_id
+QUOTA_TERMINAL_STATUSES = (
+    QUOTA_STATUS_COMMITTED,
+    QUOTA_STATUS_DENIED,
+    QUOTA_STATUS_ROLLED_BACK,
+    QUOTA_STATUS_EXPIRED,
+)
