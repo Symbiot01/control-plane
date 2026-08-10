@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
+# DEPRECATED for production provisioning.
+# Schema source of truth is Alembic: alembic upgrade head
+# (see alembic/versions/). This script may drift from the ORM and is kept
+# only for emergency local bootstraps.
+#
 # Create Control Plane tables. Run from project root: ./scripts/create_tables.sh
 set -e
+
+echo "WARNING: scripts/create_tables.sh is deprecated. Prefer: alembic upgrade head" >&2
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
