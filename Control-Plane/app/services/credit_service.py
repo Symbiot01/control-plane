@@ -178,18 +178,32 @@ async def commit_credits(
     Releases held_cents back, and permanently deducts actual_cents from prepaid_balance_cents.
     Records actual_cents in credit_ledger.
     """
+    if held_cents < 0:
+        raise ValueError("held_cents must be >= 0")
+    if actual_cents < 0:
+        raise ValueError("actual_cents must be >= 0")
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    
+
+    from sqlalchemy import and_
+
     update_stmt = (
         update(Organization)
-        .where(Organization.id == organization_id)
+        .where(
+            and_(
+                Organization.id == organization_id,
+                Organization.held_balance_cents >= held_cents,
+            )
+        )
         .values(
             held_balance_cents=Organization.held_balance_cents - held_cents,
             prepaid_balance_cents=Organization.prepaid_balance_cents - actual_cents,
             updated_at=now,
         )
     )
-    await db.execute(update_stmt)
+    result = await db.execute(update_stmt)
+    if result.rowcount == 0:
+        raise ValueError("insufficient held balance to commit")
 
     if actual_cents > 0:
         entry = CreditLedger(
@@ -214,15 +228,29 @@ async def rollback_credits(
     Rollback a hold if the action failed.
     Releases held_cents back to available balance.
     """
+    if held_cents < 0:
+        raise ValueError("held_cents must be >= 0")
+    if held_cents == 0:
+        return
+
     now = datetime.now(timezone.utc).replace(tzinfo=None)
-    
+
+    from sqlalchemy import and_
+
     update_stmt = (
         update(Organization)
-        .where(Organization.id == organization_id)
+        .where(
+            and_(
+                Organization.id == organization_id,
+                Organization.held_balance_cents >= held_cents,
+            )
+        )
         .values(
             held_balance_cents=Organization.held_balance_cents - held_cents,
             updated_at=now,
         )
     )
-    await db.execute(update_stmt)
+    result = await db.execute(update_stmt)
+    if result.rowcount == 0:
+        raise ValueError("insufficient held balance to rollback")
     await db.flush()
