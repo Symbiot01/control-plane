@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     # Frontend URLs
     ORG_CONSOLE_URL: str
 
+    # Quota reservation hold TTL and in-process reaper
+    QUOTA_HOLD_TTL_SECONDS: int = 3600
+    QUOTA_REAPER_INTERVAL_SECONDS: int = 60
+    QUOTA_REAPER_ENABLED: bool = True
+
     @field_validator("POSTGRES_SSLMODE")
     @classmethod
     def _validate_postgres_sslmode(cls, v: str) -> str:

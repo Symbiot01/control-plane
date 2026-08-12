@@ -1,35 +1,64 @@
-"""Control Plane – FastAPI app entry. Lifespan: Redis + DB; Firebase; health check."""
+"""Control Plane – FastAPI app entry. Lifespan: Redis + DB + hold reaper; Firebase; health check."""
 
+import asyncio
+import logging
 from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 
 from app.api.router import api_router
 from app.core.config import settings
-from app.modules.admin.router import admin_router
 from app.core.firebase import ensure_firebase_initialized
 from app.core.jwt import build_jwks
 from app.db.session import engine
+from app.modules.admin.router import admin_router
+from app.services.hold_reaper_service import reap_once
+
+logger = logging.getLogger("control_plane")
+
+
+async def _hold_reaper_loop(stop: asyncio.Event) -> None:
+    interval = max(5, int(settings.QUOTA_REAPER_INTERVAL_SECONDS))
+    while not stop.is_set():
+        try:
+            n = await reap_once()
+            if n:
+                logger.info("Hold reaper expired %s reservation(s)", n)
+        except Exception:
+            logger.exception("Hold reaper iteration failed")
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=interval)
+        except asyncio.TimeoutError:
+            continue
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: Firebase, Redis; attach to app.state. Shutdown: close Redis, dispose DB engine."""
+    """Startup: Firebase, Redis, optional hold reaper. Shutdown: stop reaper, close Redis, dispose DB."""
     ensure_firebase_initialized()
     redis = Redis.from_url(settings.REDIS_URL, decode_responses=True)
     app.state.redis = redis
+    stop = asyncio.Event()
+    reaper_task: asyncio.Task | None = None
+    if settings.QUOTA_REAPER_ENABLED:
+        reaper_task = asyncio.create_task(_hold_reaper_loop(stop))
     try:
         yield
     finally:
+        stop.set()
+        if reaper_task is not None:
+            await reaper_task
         await redis.aclose()
         await engine.dispose()
 
 
 app = FastAPI(
     title="Control Plane",
-    description="Phase 1: Auth, RBAC, organizations, quotas, rate limiting. No billing.",
-    version="0.1.0",
+    description="Auth, RBAC, organizations, quotas, rate limiting, billing.",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -62,15 +91,15 @@ async def jwks() -> dict:
 app.include_router(api_router)
 app.include_router(admin_router, prefix="/admin/v1")
 
-from fastapi.responses import JSONResponse
-import traceback
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+
     with open("error.log", "a") as f:
         f.write(f"Error on {request.url.path}:\n")
         traceback.print_exc(file=f)
     return JSONResponse(
         status_code=500,
-        content={"message": "Internal Server Error"}
+        content={"message": "Internal Server Error"},
     )
-
