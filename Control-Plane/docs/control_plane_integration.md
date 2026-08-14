@@ -10,29 +10,36 @@ origin. It does not run OCR, opinions, chat, or reports. It issues identity,
 then **meters and bills**. MedRecs must not duplicate a wallet or usage
 ledger as source of truth.
 
-**Highest-risk gap today:** a valid Control JWT still lets a **suspended or
-de-entitled** tenant **read PHI** (`GET /cases`, files, GCS signed URLs).
-Quota only runs on OCR/pipeline/chat. Quota is metering; it is **not** the
-PHI lock. See [Gate reads, not only models](#2-jwt-is-identity-not-authorization-for-phi).
+**Suspend policy (accepted):** login and **GET/read** stay allowed while the
+org is suspended or de-entitled. OCR, analyze, chat, reports, chronology are
+**denied by quota**. There is **no** per-request org-status lock on reads
+(no “PHI lock”). JWT `org_id` must still match the resource. GCS keys must
+still be prefixed by that `org_id` (cross-org leak). Unmetered writes
+(PATCH, upload) stay allowed unless product later gates them.
+
+Quota is metering. Org status is cached in Redis (~10 min), so processing
+may keep succeeding briefly after suspend. That allowed usage is still
+billed (`usage_ledger`). Do not promise instant cut-off.
 
 **Status of this document:** Required MedRecs architecture is **agreed**:
-sidecar, PHI lock on reads, delete `X-Org-Id`, per-run analyze, chat-only
-reserve, no `super_admin` → owner, `quota_gate.allow`. Control Plane
+sidecar, delete `X-Org-Id`, per-run analyze, chat-only reserve, no
+`super_admin` → owner, `quota_gate.allow` on **processing**. Control Plane
 HTTP/JWT answers are frozen for this build.
 
 **Written contract: green to ship against.** That is **not** a green light
-on running systems: MedRecs has not implemented it; CP still has postpay
-NameError, commit counters, unique `request_id`, and **3b**. Do not start
-PRs that guess the [open MedRecs answers](#7-questions-cp-still-wants-medrecs-to-answer).
-Slices 1–2 (JWT verifier + PHI lock) may start once those answers are
+on running systems: MedRecs has not implemented it. CP blockers **#1–#3**
+(postpay `quota/check`, commit counters, UNIQUE `request_id` + hold TTL /
+in-process reaper) are **fixed** in this tree. Do not start PRs that guess
+the [open MedRecs answers](#7-questions-cp-still-wants-medrecs-to-answer).
+Slices 1–2 (JWT verifier + sidecar session) may start once those answers are
 written here — without waiting on JWT `org_status` or cookies.
 
-Do **not** treat `org_status` on the JWT, per-product internal keys, or
-impersonation as how MedRecs solves PHI or confused deputy. Ship the
-projection + JWT tenant + private `/internal/v1` without waiting on those
-specs.
+Do **not** treat `org_status` on the JWT or per-product keys as required for
+this policy. Private `/internal/v1` + JWT tenant stay mandatory (confused
+deputy). Impersonation only if product needs staff-in-case.
 
-Last updated from Control Plane code plus agreed MedRecs contract edits.
+Last updated: quota accounting hardened (PostgreSQL buckets, statuses/409,
+hold TTL); suspend = no processing; reads stay open.
 
 ---
 
@@ -58,8 +65,7 @@ Browser
   GET {MEDRECS}/api/auth/session   (projection: member_id, org_id, role, products, exp)
     organization == null           → invite UX, no case work
     level_of_access == super_admin → 403 on cases; send to CP admin console
-    org status != active           → 403 on all org-scoped routes (reads too)
-    no product_key medical         → "not provisioned"
+    no product_key medical         → "not provisioned" for **processing** UX
   all MedRecs / editor / OCR API calls: cookie or Bearer Control JWT
   no X-Org-Id header, no organization_id in JSON
 
@@ -67,18 +73,16 @@ MedRecs API (every org-scoped route, including GET)
   verify JWT via {CP}/.well-known/jwks.json
   require iss, exp, sub, org_id, level_of_access in {owner, member}
   bind local user by JWT sub (control_member_id); org_id from token only
-  short-TTL projection from GET /organizations/{id} (Postgres): status == active
-    (PHI lock — not quota Redis, not a JWT org_status claim)
-  on CP outage: if projection TTL elapsed → 403/503 on GET too (not fail-open)
-  writes / processing: entitlement medical present and not expired
-  before expensive work:
+  GET /cases / files / history: allowed if JWT org matches (even if suspended)
+  before expensive work (OCR / analyze / chat / reports):
     request_id = server-issued UUID, persist on the job row at enqueue
     POST {CP}/internal/v1/quota/check|reserve
       X-Internal-Api-Key: <backend secret only>
       organization_id = JWT org_id     // never from client
       member_id = JWT sub
     allowed == false → 402/403/429 from reason; do not enqueue
-    401 / 5xx / timeout → 503 fail-closed
+      (suspended / no sub / not entitled / limits / credits)
+    401 / 5xx / timeout → 503 fail-closed (metered paths only; GET may proceed)
   worker: load org/member/request_id from the job row, not task kwargs
   MedRecs 401 → frontend getIdToken(true) → POST /api/auth/exchange again
 ```
@@ -99,7 +103,7 @@ These are the mismatches that will break against the new CP.
 | JWT decoder reads `roles[]` | Read `level_of_access`. `roles` is always absent → `[]` |
 | Local roles `owner/admin/member/viewer` | CP roles: `owner` and `member` only. Do not mint admin/viewer that look like CP roles |
 | `GET /api/me/organizations` syncs multi-org from `GET /organizations/me` | One org. Session projection from MedRecs exchange. No org picker |
-| Quota client exists; **use cases never call it**; GET cases ungated | **PHI lock on every org-scoped route** (status==active). Quota before models. Use cases call `quota_gate.allow(...)` — zero `action_key` strings in domain |
+| Quota client exists; **use cases never call it**; GET cases ungated | GET stays ungated **by design** while suspended. Quota **before models**. Use cases call `quota_gate.allow(...)` |
 | `QuotaDenied` always HTTP **403** | Map exact `reason` strings (402 / 403 / 429 / 400) |
 | Frontend talks to CP and MedRecs; JWT in `sessionStorage`; hardcoded org UUID | Browser → MedRecs only. Cookie preferred later (not a gate). No CP URLs in the SPA except org-console link |
 | `getSession()` uses `useControlPlane: true` against `/api/auth/session` | Keep `/api/auth/session` as a **MedRecs** projection (MedRecs called CP). Never send the SPA to CP for session |
@@ -178,13 +182,13 @@ clocks do not flap 401s.
 
 ### Who may hit MedRecs case APIs
 
-| `level_of_access` | MedRecs cases / files / processing / chat / reports |
-|---|---|
-| `owner` | allow **only if** short-TTL projection says `status == active` |
-| `member` | same |
-| `guest` | **403**. Invite + re-exchange only |
-| `super_admin` | **403**. They belong on CP `/admin/v1`. Do **not** map to owner |
-| any role, org suspended/archived | **403 on GET and writes** (PHI lock). JWT may still be valid |
+| `level_of_access` | GET cases / files / history | Processing / chat / reports |
+|---|---|---|
+| `owner` | allow if JWT `org_id` matches | quota must `allowed: true` |
+| `member` | same | same |
+| `guest` | **403** | **403** |
+| `super_admin` | **403** (use `/admin/v1`) | **403**. Do **not** map to owner |
+| org suspended / archived | **GET allowed** | **Denied** by quota (`organization status is …`) |
 
 Accepting an invite does **not** issue a new JWT. After
 `POST /invites/{id}/accept`, the client **must exchange again** so `org_id`
@@ -235,7 +239,7 @@ The SPA does **not** call these. MedRecs calls them with the Control JWT
 |---|---|---|
 | `GET /organizations/me` | **Array**. 0–1 orgs + `role` | Do not expose as a multi-org picker |
 | `GET /members/me` | `{ id, email, display_name, is_active, created_at, organization: { ...org, role } \| null }` | Preferred “who am I + my one org” for `/api/auth/session` |
-| `GET /organizations/{org_id}` | org including `entitlements`; JWT `org_id` must match | Status + entitlements for the PHI lock projection |
+| `GET /organizations/{org_id}` | org including `entitlements`; JWT `org_id` must match | Session / settings UX (`status`, entitlements). **Not** a GET lock |
 | `GET /organizations/{org_id}/products` | entitled products | “not provisioned” UX |
 
 Org objects include: `id`, `name`, `slug`, `status`, `tier`,
@@ -286,23 +290,19 @@ JWT works and **every pipeline is denied** until all of this is true:
 5. **Quota limits** per action (owner `PATCH /quotas/{org_id}` or admin). If
    no limit rows exist, limit checks are skipped (unlimited on that axis) but
    subscription + entitlement still apply.
-6. Prepay: wallet + **price rows**. Postpay: see blocker #1 in
-   [Must-fix in this CP tree](#must-fix-in-this-cp-tree-before-production-traffic)
-   (NameError on allow until patched).
+6. Prepay: wallet + **price rows**. Postpay: wallet not required; usage still
+   lands on `usage_ledger` with `cost_cents=0` (see fixed blocker #1).
 
 Who does this: **super admin**, except peer invites and owner quota PATCH.
 After exchange, MedRecs probes products **server-side** and fails the UI
 with “not provisioned” instead of starting Celery. The SPA does not call
 CP products itself.
 
-Org **quota** status is cached in Redis up to **10 minutes**, and **admin
-suspend does not invalidate that cache** in this tree (must-fix). Limits
-cache **5 minutes**.
-
-**PHI lock must not use quota’s Redis status.** MedRecs projection must
-call `GET /organizations/{id}` (Postgres) or `GET /members/me`. That is
-fresh on suspend. UI copy should not promise instant cut-off on **metered**
-paths until CP invalidates Redis on suspend.
+Org **quota** status is cached in Redis up to **10 minutes**. Admin suspend
+does not flush that cache. **Processing** can keep succeeding until TTL
+expires; those allows still hit `usage_ledger` and are billed. Limits cache
+**5 minutes**. Reads are unaffected (allowed by policy). UI copy should not
+promise instant cut-off on metered paths.
 
 ---
 
@@ -326,7 +326,7 @@ Proposed freeze (CP accepts these exact strings; register them in admin
 | `action_key` | `domain` | `unit_type` | When MedRecs calls it |
 |---|---|---|---|
 | `medical.case.analyze.v1` | `medical` | `count` | `POST /api/cases/{id}/processing/start` — **per run**, `quota/check` `units=1` |
-| `medical.chat.message.v1` | `medical` | `tokens` | chat send / SSE — **only** reserve/commit path until commit counters exist |
+| `medical.chat.message.v1` | `medical` | `tokens` | chat send / SSE — **reserve/commit** (server-capped `max_units`) |
 | `medical.report.generate.v1` | `medical` | `count` | report generation — per run `quota/check` `units=1` |
 | `medical.ocr.page.v1` | `medical` | `count` | extraction / OCR when page count is known — `quota/check` |
 | `medical.chronology.generate.v1` | `medical` | `count` | chronology start — per run `quota/check` `units=1` |
@@ -384,12 +384,18 @@ action; never log the key or medical content.
 | Situation | Status | Body |
 |---|---|---|
 | Missing/wrong internal key | **401** | `{"detail": "Invalid or missing internal API key"}` |
-| Business deny | **200** | `{ "allowed": false, "reason": "<string>", "current_usage"?, "limit"? }` |
-| Business allow | **200** | `{ "allowed": true, "current_usage"?, "limit"? }` |
-| `commit` / `rollback` reservation missing or bad | **400** | `{"detail": "..."}` |
-| Unhandled (including postpay NameError) | **500** | `{"message": "Internal Server Error"}` |
+| Business deny | **200** | `{ "allowed": false, "reason": "<string>", "status"?, "request_id"?, "current_usage"?, "limit"? }` |
+| Business allow | **200** | `{ "allowed": true, "status", "request_id"?, … }` (`check` → `committed`; `reserve` → `held`) |
+| Reservation / request missing | **404** | `{"detail": "..."}` |
+| Validation (`actual_units` over max, bad args) | **400** | `{"detail": "..."}` |
+| Idempotency / state conflict (payload mismatch, opposite terminal transition, commit after expiry) | **409** | `{"detail": {"message": "...", "status": "<current>"}}` or string detail |
+| Unhandled | **500** | `{"message": "Internal Server Error"}` |
 
 Quota is **not** 403 when the org is not entitled. It is **200 + allowed=false**.
+
+Statuses on durable rows: `pending`, `held`, `committed`, `denied`,
+`rolled_back`, `expired`. Exact same `request_id` + same fingerprint replays
+the stored decision. Same id + different payload → **409**.
 
 Fail-closed: CP **401 / 5xx / timeout** → MedRecs **503**, **do not run the
 model**. Do not fail-open when `CONTROL_PLANE_ENABLED=false` in production.
@@ -410,7 +416,7 @@ status. Do **not** map all `QuotaDenied` to 403.
 | `per_month limit exceeded` | 429 |
 | `lifetime limit exceeded` | 429 |
 | `insufficient_credits` | 402 |
-| `request_id required for prepaid organizations` | 400 |
+| `request_id` missing / invalid charset | 422 (schema) — `request_id` is **required** on check and reserve |
 | `No pricing configured for action_id=...` | 503 (misconfig) or 400 |
 
 JWT stays valid on deny. UI must show 402/403/429-style errors **without
@@ -435,16 +441,22 @@ has already been billed. Use only when failure is rare or you can compensate.
 3. Success → `POST /internal/v1/quota/commit` with `actual_units` (+ `compute_units`)
 4. Failure / cancel → `POST /internal/v1/quota/rollback`
 
-### Practical MedRecs split (required until CP patches commit counters)
+### Practical MedRecs split (product freeze)
 
-**Not fixed:** `quota_commit` writes `usage_ledger` and captures credits. It
-does **not** increment Redis day/month or DB lifetime counters. Reserve only
-*checks* limits against `max_units`; it does not consume them.
+**Fixed in CP:** day/month/hour/minute/lifetime capacity lives in PostgreSQL
+`quota_usage_buckets` (`used_units` + `reserved_units`). Reserve increments
+`reserved_units`; commit releases reserved capacity and adds actual
+`used_units`; rollback/expiry release reserved only. Redis is **not** the
+quota counter store (org-status cache and API rate limits only).
 
-**Do not** bill the full case pipeline per token via reserve/commit until
-commit counters exist. **Do not** reserve analyze with `max_units=50000`
-(that can hold the whole prepaid wallet). Cap `max_units` **server-side**;
-reject client-supplied caps.
+Postpay `quota/check` / reserve: `usage_ledger.cost_cents=0` (no wallet
+debit); `compute_units` still drive plan/overage invoices. Prepay still
+holds/debits the wallet in the same DB transaction.
+
+**Do not** reserve analyze with `max_units=50000` (that can hold the whole
+prepaid wallet). Cap chat `max_units` **server-side**; reject client-supplied
+caps. Prefer per-run `check` for long/unknown jobs until a hold heartbeat
+exists.
 
 | Work | Use |
 |---|---|
@@ -452,31 +464,22 @@ reject client-supplied caps.
 | Chronology / report / synthesis / **full analyze** | `quota/check` `units=1` (per run) |
 | Chat only | `reserve` → work → `commit`/`rollback`; server cap on `max_units` (e.g. 8k tokens) |
 
-Until commit counters ship, monthly/lifetime caps are **not** enforced on
-reserve/commit. That is why analyze is per-run check, not a token hold.
-
 ### Idempotency, async jobs, hold TTL
 
-- Always send `request_id`. Retries must reuse it. Prepaid orgs double-charge
-  without it.
-- **Format (this build):** opaque string. PostgreSQL column is unbounded
-  `VARCHAR`. **Contract for MedRecs:** UUID v4 (lowercase, with hyphens),
-  length ≤ 128, printable ASCII (`[A-Za-z0-9._:-]`). Do not put PHI in it.
-  CP does not validate charset today; treat the contract as binding anyway.
-- **No UNIQUE (`organization_id`, `request_id`)** in CP schema. Idempotency is
-  SELECT-then-insert. Concurrent retries can double-insert. Product should
-  still send a stable id and **serialize retries per job** (one in-flight
-  reserve per `request_id` in MedRecs).
-- **No hold TTL in Redis.** A `held` row lives until commit, rollback, or the
-  reaper.
-- Reaper (`scripts/reap_orphaned_holds.py`) rolls back holds **older than 1
-  hour**. It is a **cron/manual script**, not in-app. If it is not scheduled,
-  holds last forever and prepaid `held_balance_cents` stays locked.
-- If Celery runs **> 1 hour** and the reaper is on, the hold can be rolled
-  back while the worker is still running; commit then sees `status != held`
-  and returns current status **without charging**. **Chat holds** must finish
-  **< reaper cutoff** (analyze is per-run `check` — no hold). Or do not
-  schedule the reaper until CP adds TTL + extend/heartbeat.
+- **`request_id` is required** on `quota/check` and `quota/reserve`. Retries
+  must reuse the same id. Different payload with the same id → **409**.
+- **Format:** UUID v4 preferred; length ≤ 128; charset
+  `[A-Za-z0-9._:-]` (schema-enforced). **Never put PHI** in request IDs,
+  fingerprints, logs, or quota payloads.
+- **UNIQUE (`organization_id`, `request_id`)** in PostgreSQL. Concurrent
+  claims use `INSERT … ON CONFLICT`; the winner’s durable state is returned.
+- Hold TTL: `QUOTA_HOLD_TTL_SECONDS` (default **3600**). `expires_at` is
+  stored on the reservation. In-process reaper
+  (`QUOTA_REAPER_ENABLED`, interval `QUOTA_REAPER_INTERVAL_SECONDS`) expires
+  `held` rows with `FOR UPDATE SKIP LOCKED`, releasing bucket capacity and
+  wallet holds. `scripts/reap_orphaned_holds.py` calls the same service.
+- Late **commit** against an **expired** (or otherwise non-`held`)
+  reservation → **409**. Do not treat that as a silent no-op bill.
 
 `X-Request-Id` already used for MedRecs request logs is **not** the quota
 `request_id`. Quota id must be persisted on the job (processing start,
@@ -527,7 +530,7 @@ Content-Type: application/json
 }
 ```
 
-**Analyze per run (required until commit counters exist):**
+**Analyze per run (known cost — prefer `check` for long jobs):**
 
 ```http
 POST /internal/v1/quota/check
@@ -579,18 +582,18 @@ X-Internal-Api-Key: <secret>
 
 Will not work as-is. Highest risk first:
 
-1. **PHI lock on every org-scoped route** — including GET cases, files, chat
-   history, and GCS signed-URL minting. Require `owner|member`, JWT `org_id`
-   matching the resource, and a short-TTL projection of `status == active`
-   from **`GET /organizations/{id}` (Postgres)**. Do not use quota Redis
-   status (can stay `active` 10 minutes after suspend). Do not wait on
-   `org_status` in the JWT. On CP outage: if the projection TTL has elapsed
-   → **403/503 on GET too**. Never serve GET because “CP is down.”
+1. **Tenant on every org-scoped route** — require `owner|member` and JWT
+   `org_id` matching the resource (including GET cases, files, chat history,
+   and GCS signed-URL minting). **Do not** require `organization.status ==
+   active` on GET. Suspended tenants may still read. GCS keys must still be
+   prefixed by JWT `org_id` (cross-org leak, not a status lock). Do not wait
+   on `org_status` in the JWT. Processing is blocked by **quota**, not by a
+   per-request org GET.
 2. **CP is a backend sidecar** — keep `POST /api/auth/exchange` on MedRecs,
    upsert `control_member_id`, return `/api/auth/session` projection. SPA
    must not know CP URLs except the org-console billing **link**. httpOnly
-   cookie is **preferred, not a gate** — do not block the PHI-lock PR on
-   cookies; answer [editor origin](#7-questions-cp-still-wants-medrecs-to-answer)
+   cookie is **preferred, not a gate** — do not block slices 1–3 on cookies;
+   answer [editor origin](#7-questions-cp-still-wants-medrecs-to-answer)
    first (`SameSite=None` if the editor is another origin).
 3. **Delete `X-Org-Id`** (400 if sent). Do not take `organization_id` in JSON
    bodies. Celery reads org/member/`request_id` from the **job row**.
@@ -635,7 +638,8 @@ outlive the token that started them.
 - Frontend: Firebase `getIdToken(true)` → **MedRecs** `/api/auth/exchange`
   **before** `exp`, with a single-flight lock. Cookie refresh is server-side
   if using httpOnly.
-- Do not treat quota 402/403 or org-suspended 403 as auth expiry (no logout).
+- Do not treat quota 402/403 (including suspended-org processing deny) as
+  auth expiry (no logout). GET while suspended is **not** an error.
 - In-flight SSE: finishing the stream is OK; the **next** send must use a
   fresh session. Starting a new metered turn with an expired JWT is 401.
 
@@ -661,10 +665,9 @@ production traffic. “Not this build” means MedRecs must design around it.
 
 | # | Item | CP answer |
 |---|---|---|
-| 1 | Postpay `NameError` in `quota_check` | **Will fix.** `charge_compute_units` / `cost_cents` are only set on the prepay path, then always passed to `record_usage`. Default `billing_mode` is `postpay`. Allow can **500**. MedRecs analyze/OCR/report/chronology use **`quota/check`**, so “use reserve/commit only” is **not** a workaround for those paths. Until patched: **prepay test orgs**, or do not send postpay traffic to `quota/check`. Chat reserve/commit is safer for postpay today (`cost_cents` defaults to 0) but is **not** a substitute for analyze. |
-| 2 | Commit updates day/month/lifetime counters | **Will fix.** Until then, reserve/commit does **not** consume Redis/DB limits. MedRecs must use `quota/check` when limits must stick. |
-| 3 | UNIQUE `(organization_id, request_id)` + hold TTL + in-process reaper | **Will fix.** Today: no unique constraint, no Redis TTL, reaper is `scripts/reap_orphaned_holds.py` (1 hour, cron/manual). MedRecs must serialize retries and keep chat holds &lt; 1h if the reaper is scheduled. |
-| 3b | Invalidate Redis `org_status` on admin suspend/activate | **Will fix.** `invalidate_org_status` exists but suspend does **not** call it. Quota can keep allowing for **10 minutes** after suspend. **PHI lock must use `GET /organizations/{id}` (DB), not quota status.** |
+| 1 | Postpay `NameError` in `quota_check` | **Fixed.** Postpay sets `cost_cents=0` and still records `compute_units` on `usage_ledger` for invoices. Prepay still resolves price and debits credits. |
+| 2 | Commit updates day/month/lifetime counters | **Fixed.** PostgreSQL `quota_usage_buckets` are authoritative; reserve holds capacity; commit consumes actual usage; rollback/expiry release holds. |
+| 3 | UNIQUE `(organization_id, request_id)` + hold TTL + in-process reaper | **Fixed.** Unique constraint + fingerprint; configurable `QUOTA_HOLD_TTL_SECONDS`; FastAPI lifespan reaper + shared script. Late commit after expiry → **409**. |
 | 4 | CORS allowlist | **Will fix** for org-console → CP. MedRecs SPA must **not** call CP (sidecar). Still restrict MedRecs CORS (today also `*` + credentials). |
 | 5 | `/internal/v1` private URL | **Ops, not app code.** Key is the only code-level guard. Deploy behind a private network / gateway. No mTLS in this tree. |
 | 6 | Admin seed for MedRecs | **Ops before go-live.** Create `product_key=medical`, the frozen `action_key`s, prices, and per-customer active subscription + entitlement + limits. Not a MedRecs bug if this is missing. |
@@ -674,18 +677,18 @@ production traffic. “Not this build” means MedRecs must design around it.
 | # | Item | CP answer |
 |---|---|---|
 | 7 | Machine-stable deny codes | **Not this build.** Match the `reason` strings in [Deny reason](#deny-reason--product-http). Prefix-match entitlement and org status. |
-| 8 | Hold heartbeat / extend | **Not this build.** **Chat holds** must finish **&lt; 1 hour** if the reaper runs, or do not schedule the reaper until a heartbeat exists. Analyze has no hold. |
+| 8 | Hold heartbeat / extend | **Not this build.** Default hold TTL is `QUOTA_HOLD_TTL_SECONDS` (3600). **Chat holds** must finish before expiry; there is no extend API. Analyze has no hold. |
 | 9 | Dual-role token for super admins | **Not this build.** Exchange prefers `super_admin` and **omits `org_id`**. MedRecs **403** super_admin on case APIs. Do not map to owner. They use `/admin/v1` only. |
 | 10 | JWT `aud` claim | **Not this build.** Product must still require `iss` + JWKS from **this** CP base URL. Do not share JWKS across issuers. |
 | 11 | Key rotation with a new `kid` | **Not this build.** `kid` is always `control-plane-1`. Short JWKS cache (minutes). |
 | 12 | `Retry-After` / `quota_decision_id` | **Not this build.** Product may add a local delay; do not loop quota/check. Trace with `request_id`. |
-| 13 | Suspend webhook | **Not this build.** Quota Redis `org_status` can stay `active` **10 minutes** after suspend (`invalidate_org_status` is not called — must-fix **3b**). PHI lock uses org GET (Postgres), so this lag is a **quota** problem, not the PHI signal. |
+| 13 | Suspend webhook | **Not this build.** Quota Redis may keep `org_status` `active` up to **10 minutes** after suspend. Lag is **processing only**; GET stays allowed. Allowed usage in that window is billed. |
 | 14 | Separate OpenAPI for internal quota | **Not this build.** Contract is this doc + FastAPI `/docs` on CP. |
 | 15 | `request_id` format | **Answered in this doc:** UUID v4, ≤ 128 chars, `[A-Za-z0-9._:-]`, no PHI. |
 | 16 | Integer division on commit rate | **Not this build.** Always pass `compute_units` equal to the billed dimension on both reserve and commit. |
 | 17 | Enforce `max_compute_units` on entitlements | **Not this build.** Field is stored and returned, **never enforced**. Use quota limits + credits. |
-| 18 | In-app reaper + metrics | **Same as #3.** Will fix as part of hold TTL work; not available today. |
-| 19 | 409 after reaper rollback | **Not this build.** Commit on a non-`held` row returns `{ "status": "<current>" }` without charging. Treat that as a billing miss; do not retry commit blindly. |
+| 18 | In-app reaper + metrics | **Fixed (reaper).** Lifespan loop + `scripts/reap_orphaned_holds.py`. Metrics/dashboards still **not this build**. |
+| 19 | 409 after reaper expiry | **Fixed.** Commit/rollback on a non-`held` row (including `expired`) → **409** with current `status`. Do not retry commit blindly; treat as a billing miss / recover via support if needed. |
 | 20 | Invite freeze to 2099 | **Current behavior.** First `/auth/exchange` sets pending invite `expires_at` to 2099-12-31. MedRecs UX can treat pending invites as non-expiring after first login. Do not rely on wall-clock expiry after that. |
 
 ---
@@ -698,8 +701,8 @@ production traffic. “Not this build” means MedRecs must design around it.
   medical org** until `/internal/v1` is private and tenant is taken only
   from the JWT.
 - Control JWTs are claim-based RBAC. Role changes apply on **next exchange**,
-  not live DB lookup. Org **suspend** is not in the JWT; PHI lock is the
-  org GET projection.
+  not live DB lookup. Org **suspend** is not in the JWT. Processing is
+  denied by **quota**. GET/read stays allowed (accepted risk).
 - Same quota path for every user. No “trusted internal” skip.
 - Same Firebase **project** as CP. If not, exchange fails.
 - Browser → MedRecs only. MedRecs → CP for exchange, profile, products,
@@ -720,17 +723,17 @@ These were the original MedRecs blockers. Answers are from this repo.
 | 3 | How does a user get an org? | Invite-only on the public API. Deep-link `{ORG_CONSOLE_URL}/invite?token={id}`. Accept requires JWT + matching email. Second org → 400. |
 | 4 | Product / action registration | Freeze `product_key=medical` and the action table in [Product and action registration](#product-and-action-registration). Every action **must** have `product_id` + a price row (prepay). |
 | 5 | Who seeds a customer org? | Super admin: org (or org-create invite), plan subscription, entitlement, limits. Owner may PATCH quotas. Signed in ≠ provisioned. |
-| 6 | check vs reserve/commit | See [Two metering styles](#two-metering-styles). Commit does **not** increment limit counters until CP patches #2. |
-| 7 | Postpay NameError | **Not patched in this tree.** Blocker #1. |
-| 8 | Hold TTL / dead worker | No Redis TTL. Reaper is 1 hour **if scheduled**. Dead worker leaves `held` until reaper or rollback. |
-| 9 | Quota HTTP status | 401 bad key; **200** `{allowed, reason}` for business allow/deny; 400 bad commit/rollback; 500 unhandled. Fail-closed on 401/5xx/timeout. |
+| 6 | check vs reserve/commit | See [Two metering styles](#two-metering-styles). Both consume PostgreSQL quota buckets; chat uses reserve/commit. |
+| 7 | Postpay NameError | **Fixed.** Blocker #1. |
+| 8 | Hold TTL / dead worker | `expires_at` + in-process reaper (default 1h TTL). Dead worker → `expired` (capacity + wallet hold released). Late commit → **409**. |
+| 9 | Quota HTTP status | 401 bad key; **200** `{allowed, reason, status}` for business allow/deny; **404** missing; **400** validation; **409** conflicts; 500 unhandled. Fail-closed on 401/5xx/timeout. |
 | 10 | Network / key | Key only. `/internal/v1` must be private. Rotate `INTERNAL_API_KEY` with CP. Never in the browser. |
 | 11 | `admin` / `viewer` | **Will not add in this build.** Only `owner` and `member`. Collapse MedRecs roles. |
 | 12 | Org switch | **Final: one org.** No switch endpoint. **Delete `X-Org-Id`** (400 if sent). |
 | 13 | Guest token | Store only for invite-accept + re-exchange. 403 on all MedRecs case APIs. |
 | 14 | Super admin on product APIs | **Deny.** No `org_id` on that JWT. `/admin/v1` only. Do not map to owner. |
 | 15 | Gemini `actual_units` vs `compute_units` | Same billed dimension on both. Cost = `compute_units * rate_cents_per_compute_unit`. Default: `compute_units = units`. |
-| 16 | JWT vs quota deny | JWT stays valid. That is why **reads need a status projection**, not only quota. UI must not logout on 402/403/429. |
+| 16 | JWT vs quota deny | JWT stays valid after suspend. **Reads stay allowed.** Processing is denied by quota (`organization status is …`). UI must not logout on 402/403/429. |
 | 17 | JWKS / issuer / kid | Per-env `JWT_ISSUER` (example `control-plane`). `kid` always `control-plane-1`. Fetch JWKS from that CP (**MedRecs backend**). |
 | 18 | CORS | Wildcard today. Will fix. **Do not** depend on browser→CP. Sidecar makes CORS on CP less critical for MedRecs SPA. |
 | 19 | Deny `reason` codes | Human strings only. Table in [Deny reason](#deny-reason--product-http). |
@@ -751,7 +754,7 @@ in product, then freeze here.
 | Billing UI | No second ledger. Writes stay on CP admin | Org-console **link** (required default). Proxy usage summary only if needed |
 | Invite UX | SPA does not call CP. Re-exchange after accept. Canonical deep-link is `{ORG_CONSOLE_URL}/invite?token=` | MedRecs invite page that **proxies** accept vs send users to org console |
 | Pipeline metering | **Frozen:** analyze/report/chronology/synthesis = per-run `check` `units=1`. OCR = pages. Chat = reserve/commit with server cap | Token-counting rule for chat (prompt+completion vs completion; cached tokens) |
-| Fail-closed | **Required** for writes, models, signed URLs, **and GET when projection TTL elapsed**. `CONTROL_PLANE_ENABLED=false` is laptop only — **not staging** | None. Serving GET because CP is down reopens PHI after a suspend you cannot see |
+| Fail-closed | **Required** for **metered** work (OCR / analyze / chat / reports). `CONTROL_PLANE_ENABLED=false` is laptop only — **not staging**. GET may proceed on a valid JWT even if CP is down | Unmetered writes (PATCH, upload) default same as GET unless product later gates them |
 | Job duration vs 1h reaper | No heartbeat in this build. Analyze is per-run check so long jobs do not hold wallet | Max agentic **wall time** (must be known; holds only used for chat) |
 | Firebase project | **Same project** as that CP env | None |
 | Browser vs backend | **Sidecar.** SPA does not call CP. Quota never from browser | JWT storage: httpOnly cookie (preferred) vs localStorage + XSS story; editor origin / SameSite |
@@ -762,24 +765,23 @@ in product, then freeze here.
 
 ## Integration sequence (implementation order)
 
-Suggested PR slices so auth is not half-migrated and PHI is not left open.
-Do **not** block slice 2 on cookies or on `org_status` in the JWT.
+Suggested PR slices so auth is not half-migrated and quota is not skipped.
+Do **not** block slices 1–3 on cookies or on `org_status` in the JWT.
 
 1. **One JWT verifier** — `iss`, `kid`, `level_of_access`; reject
-   guest/super_admin; bind user by `sub`; **delete `X-Org-Id`**.
-2. **PHI lock** — short-TTL `status == active` from org GET (Postgres) on
-   **every** org-scoped route including GET and signed URLs. Expired cache +
-   CP outage → 403/503 on GET. Bearer JWT is enough.
-3. **Sidecar session** — MedRecs `POST /api/auth/exchange` + `/api/auth/session`
+   guest/super_admin; bind user by `sub`; **delete `X-Org-Id`**; JWT `org_id`
+   must match the resource (GCS prefix included). Bearer JWT is enough.
+2. **Sidecar session** — MedRecs `POST /api/auth/exchange` + `/api/auth/session`
    projection; SPA drops CP base URL and dual tokens. Cookie vs storage after
-   editor-origin (question 2) is answered.
-4. **Quota port** — `quota_gate.allow(...)`; constants module for `action_key`s;
+   editor-origin (question 2) is answered. Suspended orgs may still get a
+   session (reads allowed).
+3. **Quota port** — `quota_gate.allow(...)`; constants module for `action_key`s;
    reason → HTTP; tests mock HTTP client.
-5. **Wire metering** — per-run `check` on analyze/report/chronology/OCR;
+4. **Wire metering** — per-run `check` on analyze/report/chronology/OCR;
    reserve/commit **chat only** with server cap; persist `request_id` on the
-   job row; workers read the row.
-6. **Editor + OCR** on the same verifier. No header fallback.
-7. **Admin seed** in CP and a contract test against a mock CP.
+   job row; workers read the row. This is what **stops processing** on suspend.
+5. **Editor + OCR** on the same verifier. No header fallback.
+6. **Admin seed** in CP and a contract test against a mock CP.
 
 ---
 
@@ -795,10 +797,10 @@ Without an active subscription + `medical` entitlement, every metered call
 returns `allowed: false` with `no active subscription` or not-entitled. That
 is expected, not a MedRecs bug.
 
-Until postpay `quota/check` is patched, use a **prepay** test org. Do not
-route postpay analyze/OCR through `quota/check`. Chat reserve/commit is
-safer for postpay today (`cost_cents` defaults to 0) but is **not** a
-substitute for analyze.
+Postpay and prepay both work on `quota/check` and reserve/commit. Postpay
+records usage with `cost_cents=0` (invoice via `compute_units`); prepay
+debits the wallet. Chat reserve/commit is still **not** a substitute for
+per-run analyze `check`.
 
 ---
 
@@ -853,33 +855,36 @@ Editor and OCR must use the **same** verifier as MedRecs (shared library or
 copied JWKS settings). Three slightly different middlewares is how `X-Org-Id`
 fallback survived.
 
-### 2. JWT is identity, not authorization for PHI
+### 2. JWT is identity, not a suspend lock
 
 CP JWT stays valid when the org is **suspended**, entitlement expired, or
 subscription dead. Quota only runs on metered paths.
 
-**If MedRecs only gates processing/chat, a suspended tenant can still GET
-cases, files, GCS signed URLs, and chat history.** That is the highest-risk
-gap in the current plan.
+**Accepted policy:** a suspended tenant **may** GET cases, files, GCS signed
+URLs, and chat history. Login still works. OCR / analyze / chat / reports
+are denied by quota (`organization status is suspended` → product 403).
+There is **no** per-request org-status lock on reads.
 
-Required on **every** org-scoped MedRecs route (reads included), not only
-LLM:
+Required on **every** org-scoped MedRecs route (reads included):
 
 - `level_of_access` in `{owner, member}`
 - `org_id` present and equal to the resource’s org
-- local projection of `organization.status == active` (refresh from
-  `GET /organizations/{id}` or `GET /members/me` on a short TTL, e.g. 60s)
-- for writes / processing: entitlement `medical` present and not expired
+- GCS object keys / signed URLs prefixed by that `org_id` (cross-org leak)
 
-Do **not** wait for a CP webhook or for `org_status` on the JWT. A 30-minute
-claim is **slower** to suspend than a 60s `GET /organizations/{id}`. The
-**projection is the lock**; a future claim is only fewer GETs. Still need
-the projection after the claim exists (JWT can be stale). Do **not** assume
-quota-on-start is enough (quota Redis can stay `active` 10 minutes).
+For **processing** (not GET): quota `allowed: true` (subscription,
+entitlement, limits, credits, **and** org status via quota). Quota Redis
+may stay `active` ~10 minutes after suspend; leftover allows are billed.
 
-On CP outage: fail-closed for writes and signed URL minting. If the
-projection TTL has elapsed and CP cannot be reached → **403/503 on GET
-too**. Never fail-open to “allow GET because CP is down.”
+Do **not** wait for a CP webhook or for `org_status` on the JWT. Do **not**
+call `GET /organizations/{id}` on every GET as a read lock. Org GET /
+`members/me` stay for **session and settings UX** (`status` banner is fine).
+
+On CP outage: fail-closed for **metered** work (503, do not run the model).
+GET may proceed on a valid JWT. Unmetered writes (PATCH, upload) default
+the same as GET unless product later gates them.
+
+**Accepted risk:** PHI remains readable after suspend until product later
+gates GET. Processing stop is quota (not instant; Redis status TTL ~10 min).
 
 ### 3. Do not let the client name the tenant or the bill
 
@@ -900,11 +905,12 @@ too**. Never fail-open to “allow GET because CP is down.”
 
 | Tempting MedRecs choice | Why to reject it |
 |---|---|
+| 403 GET on suspend via per-request `GET /organizations/{id}` | **Rejected.** Login and reads stay allowed. Quota stops processing. Org GET is session/UX only. |
 | Keep `admin` / `viewer` as CP-looking roles | CP will not enforce them. A “viewer” who is a CP `member` can still pass quota and mutate if your use case only checks the local enum. Collapse to owner/member or keep viewer as a **separate** MedRecs ACL that is stricter than CP, never looser. |
 | Map `super_admin` → owner “so we can debug cases” | Super-admin JWT has **no** `org_id`. That is impersonation. Use CP admin + a future impersonation API, not MedRecs. |
 | `CONTROL_PLANE_ENABLED=false` in staging | Staging will lie; someone will ship it. Use a real CP (or a recorded mock with the same deny reasons). Flag is local laptop only. |
 | Reserve pipeline with `max_units=50000` “to be safe” | Prepaid hold can lock the whole wallet. **Do not reserve analyze.** Chat cap is server-side (e.g. 8k). OCR = known pages. Reject client-supplied caps. |
-| Bill the full case pipeline per Gemini token via reserve/commit | Hold TTL, integer division, commit **not** updating limit counters, jobs &gt; 1h. **Bill `medical.case.analyze.v1` per run** (`quota/check` `units=1`) until CP patches commit counters. Use reserve/commit for **chat** (short, known-ish). |
+| Bill the full case pipeline per Gemini token via reserve/commit | Hold TTL (no heartbeat), integer division risk, jobs longer than hold TTL → **409** on late commit. Prefer **`medical.case.analyze.v1` per run** (`quota/check` `units=1`). Use reserve/commit for **chat** (short, server-capped). |
 | Optimistic UI: start OCR then quota | You will run work you cannot charge and cannot legally justify if deny comes back. Quota first, always. |
 | Retry `quota/check` on 200 `allowed: false` | That is not transient. Retry only 401-after-refresh (user JWT), and CP 503/timeout with backoff, same `request_id`. |
 | Poll `GET /organizations/me` to sync multi-org | One org. Polling creates a fake switcher. Session from exchange + `members/me` once. |
@@ -936,16 +942,16 @@ medrecs/domain/*                 no HTTP, no JWT, no action_key strings
 - Join users by `control_member_id = sub`, not email (email can change in
   Firebase).
 - Timeouts: quota HTTP **≤ 2s**, fail-closed. No unbounded retries.
-- Circuit breaker: if CP is down **and** the status projection TTL has
-  elapsed, org-scoped **GET**, metered routes, and signed-URL minting all
-  403/503. Do not queue Celery “to drain later” without a hold (you cannot
-  commit later without a reservation). Do not serve GET because CP is down.
+- Circuit breaker: if CP is down, **metered** routes 503 (do not enqueue).
+  Do not queue Celery “to drain later” without a hold (you cannot commit
+  later without a reservation). GET may proceed on a valid JWT. Do not mint
+  signed URLs for an `org_id` that is not the JWT’s.
 
 Tests: mock at the **HTTP client** boundary with recorded allow/deny
 bodies. Stubbing `check_quota` inside the use case is how metering was
 skipped. Add one contract test per `reason` string.
 
-### 6. Metering freeze until CP is patched
+### 6. Metering freeze (product style)
 
 Required (not a suggestion):
 
@@ -955,7 +961,7 @@ Required (not a suggestion):
 | OCR / extract | `medical.ocr.page.v1` | `check`, `units=pages` | Known up front |
 | Full pipeline | `medical.case.analyze.v1` | `check`, `units=1` | Per-run; avoids long holds |
 | Chat turn | `medical.chat.message.v1` | reserve → commit/rollback | Tokens unknown, short; **server cap** |
-| Report | `medical.report.generate.v1` | `check`, `units=1` | Per-run until commit counters exist |
+| Report | `medical.report.generate.v1` | `check`, `units=1` | Per-run (no hold heartbeat) |
 | Chronology | `medical.chronology.generate.v1` | `check`, `units=1` | Per-run |
 | Synthesis (if separate) | `medical.synthesis.generate.v1` | `check`, `units=1` | Same |
 
@@ -967,20 +973,21 @@ OCR into the analyze run and drop the extra key.
 ### 7. Questions CP still wants MedRecs to answer
 
 Do not start implementation PRs that guess these. Write the answers into
-this doc. Q4 (Celery job row only) and Q5 (403 GET on suspend via
-projection) are **already required architecture** — confirm in code, do not
+this doc. Q4 (Celery job row only) and Q5 (GET stays allowed while
+suspended; quota stops processing) are **closed** — confirm in code, do not
 re-open.
 
 1. **JWT storage:** httpOnly cookie (preferred) vs `localStorage`? **Not a
-   gate for the PHI-lock PR.** If localStorage, what is the XSS story (CSP,
+   gate for slices 1–3.** If localStorage, what is the XSS story (CSP,
    no `eval`, no user HTML)?
 2. **Editor origin:** same site as MedRecs or a separate origin that needs
    CORS + cookie `SameSite=None`? **Answer this before choosing cookies.**
 3. **GCS:** are object names prefixed by `org_id`? Is minting signed URLs
-   on the same auth stack as cases (PHI lock + JWT org, not quota)?
+   on the same auth stack as cases (JWT `org_id` match, not quota / not
+   org-status)?
 4. ~~Celery enqueue org in task kwargs~~ **Closed:** job row only.
-5. ~~Suspended-org GET~~ **Closed:** 403 on GET cases/files/history/signed
-   URLs via org GET projection — not quota.
+5. ~~Suspended-org GET~~ **Closed:** GET/read **allowed** while suspended.
+   Processing denied by quota. No per-request org-status lock.
 6. **Staff access to a customer case:** if you need this, say so; do not
    overload `super_admin`. That is CP impersonation (below). Not a MedRecs
    backdoor.
@@ -997,23 +1004,21 @@ re-open.
 
 ## CP work to spec on the Control Plane side
 
-These are **not** how MedRecs solves PHI or confused deputy. Do **not**
+These are **not** required for the accepted suspend policy. Do **not**
 block MedRecs on `org_status` in the JWT. Spec impersonation and
 per-product keys **when product actually needs them**.
 
 | Ask | What it actually buys | What it does **not** buy |
 |---|---|---|
-| **`org_status` on the JWT** | Fewer CP GETs on hot reads | **Not the PHI lock.** A 30-minute claim is slower to suspend than a 60s org GET. Projection stays required even after the claim exists. |
+| **`org_status` on the JWT** | Fewer CP GETs if product later wants a status banner without calling org GET | **Not** a read lock. JWT can be stale for up to `exp` (~30 min). Not required for this build. |
 | **Per-product internal API keys** | A leaked MedRecs key cannot bill `legal.*` / `vision.*` | **Does not** stop debiting **any medical org**. Tenant from JWT + private `/internal/v1` stays mandatory. |
 | **Impersonation / dual-role token** | Staff open a customer case without mapping `super_admin` → owner | Not a MedRecs backdoor. Until spec’d, staff stay on `/admin/v1`. |
-| Must-fix **3b**: call `invalidate_org_status` on suspend/activate | Quota Redis stops lying `active` for 10 minutes | Still **not** the PHI signal. PHI lock uses `GET /organizations/{id}` (Postgres). |
-| Hold heartbeat, unique `(org, request_id)`, commit counters, postpay NameError | Billing correctness | Unrelated to PHI reads |
+| Hold heartbeat / extend (unique id + counters + postpay already fixed) | Long jobs without heartbeat | Unrelated to whether GET is allowed while suspended |
 
-Ship MedRecs PHI lock + sidecar **without waiting on JWT `org_status` or
-cookies**. Still write the remaining open answers before guessing them in
-PRs. Ask CP for 3b (invalidate on suspend) as a quota correctness fix.
-Spec impersonation / per-product keys only when product needs staff-in-case
-or multi-product isolation.
+Ship MedRecs sidecar + JWT tenant + quota-on-processing **without waiting
+on JWT `org_status` or cookies**. Still write the remaining open answers
+before guessing them in PRs. Spec impersonation / per-product keys only when
+product needs staff-in-case or multi-product isolation.
 
 ---
 
@@ -1022,10 +1027,9 @@ or multi-product isolation.
 
 ### Control Plane / ops
 
-- [ ] Patch postpay `NameError` (`quota_check`) or waive with prepay-only orgs
-- [ ] Patch commit so day/month/lifetime counters increment, or waive with check-only limits
-- [ ] UNIQUE `(organization_id, request_id)` + hold TTL / in-process reaper (or serialize + chat holds &lt; 1h)
-- [ ] Invalidate Redis `org_status` on suspend/activate (**3b** — quota lag only; PHI lock uses org GET)
+- [x] Patch postpay `quota/check` (`cost_cents=0`, durable idempotent decisions)
+- [x] Commit/reserve update PostgreSQL quota buckets (`used_units` / `reserved_units`)
+- [x] UNIQUE `(organization_id, request_id)` + hold TTL + in-process reaper
 - [ ] CORS allowlist for **org console** → CP; MedRecs SPA does not call CP; `/internal/v1` private
 - [ ] Admin seed: `product_key=medical`, frozen `action_key`s, prices
 - [ ] Each customer org: active subscription + `medical` entitlement + quota limits (+ wallet if prepay)
@@ -1033,14 +1037,14 @@ or multi-product isolation.
 
 ### MedRecs
 
-- [ ] Sidecar: browser → MedRecs only; `POST /api/auth/exchange` upserts `sub`; `/api/auth/session` projection
-- [ ] **PHI lock (do not wait on JWT `org_status` or cookies):** 403 GET cases/files/signed URLs unless org GET (Postgres) says `active`; expired cache + CP down → 403/503 on GET
+- [ ] Sidecar: browser → MedRecs only; `POST /api/auth/exchange` upserts `sub`; `/api/auth/session` projection (suspended orgs may still get a session)
+- [ ] JWT `org_id` matches the resource on GET and writes; GCS keys prefixed by that `org_id`. **No** per-request org-status lock on GET (reads stay allowed while suspended)
 - [ ] **Delete `X-Org-Id`** (400 if sent); no client `organization_id`; Celery reads the job row
 - [ ] One JWT verifier (MedRecs + editor + OCR); `iss` + `level_of_access`; join users by `sub`
 - [ ] `owner`/`member` only; 403 guest and super_admin; no admin/viewer that look like CP roles
-- [ ] `quota_gate.allow(...)`; one `action_key` constants module; tests mock HTTP, not the use case
+- [ ] `quota_gate.allow(...)` on OCR / analyze / chat / reports; one `action_key` constants module; tests mock HTTP, not the use case
 - [ ] Metering freeze: analyze/report/chronology = `check` `units=1`; OCR = pages; **chat only** reserve/commit with server cap (commit `actual_units` ≤ cap)
-- [ ] Stable UUID `request_id` on the job row; deny `reason` → 402/403/429
+- [ ] Stable UUID `request_id` on the job row; deny `reason` → 402/403/429 (suspended processing → 403)
 - [ ] `CONTROL_PLANE_ENABLED=true` in staging/prod; no staff quota skip; no second invoice ledger
-- [ ] Answer editor origin (Q2) before cookies; cookie vs storage is preferred, **not** a PHI-lock gate
+- [ ] Answer editor origin (Q2) before cookies; cookie vs storage is preferred, **not** a ship gate
 - [ ] Remaining open (write into this doc before guessing in PRs): editor origin, cookie vs storage, GCS prefix + signed URLs, surviving local org, chat token counting, max agentic wall time, staff-in-case (CP impersonation spec)

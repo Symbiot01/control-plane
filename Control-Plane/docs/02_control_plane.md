@@ -48,9 +48,9 @@ The admin module (`/admin/v1`) provides write APIs for plans, subscriptions, inv
 ## 5. Quota and rate limiting
 
 - **Actions** — Global registry in `quota_actions` (e.g. `action_key`: `legal.case.analyze.v1`). See [05_actions_guide.md](05_actions_guide.md).
-- **Limits** — `organization_quota_limits`: per org, per action, per period (day, month, lifetime). Day and month usage are tracked in Redis; lifetime in `organization_usage_lifetime` (and Redis where used).
+- **Limits** — `organization_quota_limits`: per org, per action, per period (day, month, lifetime, etc.). Live usage/holds live in PostgreSQL `quota_usage_buckets` (`used_units`, `reserved_units`). Redis is for org-status cache and API rate limiting only.
 - **Rate limiting** — Per-org Redis-based rate limit (dependency `rate_limit_per_org`); returns 429 when exceeded.
-- **Quota check** — The internal endpoint `POST /internal/v1/quota/check` evaluates org status, active subscription, limits, and (for prepay) wallet balance; on allow it increments counters and writes to `usage_ledger`.
+- **Quota check** — The internal endpoint `POST /internal/v1/quota/check` evaluates org status, active subscription, limits, and (for prepay) wallet balance; on allow it increments PostgreSQL buckets and writes to `usage_ledger`. Postpay records `cost_cents=0`.
 
 ---
 
@@ -58,20 +58,20 @@ The admin module (`/admin/v1`) provides write APIs for plans, subscriptions, inv
 
 - **Plans** — Catalog in `plans` (monthly_price, included_compute_units, overage_rate, currency). Read via `GET /plans`.
 - **Subscriptions** — `organization_subscriptions` links an org to a plan with a billing window. An org must have an active subscription for the internal quota check to allow requests.
-- **Usage** — Every allowed quota check writes a row to `usage_ledger` (organization_id, action_id, units, compute_units, member_id, request_id, created_at).
+- **Usage** — Every allowed quota check (and successful commit) writes a row to `usage_ledger` (organization_id, action_id, units, compute_units, member_id, request_id, created_at).
 - **Pricing** — `quota_action_prices`: per action, `rate_cents_per_compute_unit` and `effective_from`. Used to compute cost for prepay and for invoice line amounts.
-- **Prepaid wallet** — Organizations have `prepaid_balance_cents`, `billing_mode` (postpay or prepay), and optional `overdraft_limit_cents`. `credit_ledger` records grants, top-ups, and consumption. For prepay, the quota check debits the wallet before recording usage; `request_id` is required for idempotency.
+- **Prepaid wallet** — Organizations have `prepaid_balance_cents`, `billing_mode` (postpay or prepay), and optional `overdraft_limit_cents`. `credit_ledger` records grants, top-ups, and consumption. For prepay, check/reserve debit or hold the wallet; `request_id` is required for idempotency.
 - **Invoices** — Generated from `usage_ledger` over a billing period: `invoices` (total_compute_units, included_units, overage_units, amount_due, credits_applied_cents, amount_paid_cents, status) and `invoice_line_items` per action. Org members can read invoices via billing APIs; admins can generate and update them via the admin API.
-- **Idempotency** — `quota_check_requests` stores the allow/deny decision per (organization_id, request_id). Retries with the same request_id return the same result and do not double-debit or double-record usage.
+- **Idempotency** — `quota_check_requests` is UNIQUE on `(organization_id, request_id)` with a request fingerprint. Exact retries return the stored decision; payload mismatch → **409**. Hold TTL + in-process reaper expire stale `held` rows.
 
 ---
 
 ## 7. Internal quota check
 
-- **Endpoint** — `POST /internal/v1/quota/check`.
+- **Endpoint** — `POST /internal/v1/quota/check` (also `reserve` / `commit` / `rollback`).
 - **Auth** — `INTERNAL_API_KEY` in header.
-- **Request body** — `organization_id`, `action_key`, `units` (default 1), optional `member_id`, `request_id`, `compute_units` (defaults to units).
-- **Behavior** — Validates org status, subscription, action; checks day/month/lifetime limits; for prepay, resolves rate and debits wallet (with request_id). On allow: increments Redis/DB usage and writes `usage_ledger`. Returns `allowed`, optional `reason`, `current_usage`, `limit`.
+- **Request body** — `organization_id`, `action_key`, `units` (default 1), optional `member_id`, **required** `request_id`, optional `compute_units` (defaults to units).
+- **Behavior** — Validates org status, subscription, action; checks PostgreSQL bucket limits; for prepay, resolves rate and debits wallet. On allow: increments `used_units`, writes one `usage_ledger` row, status `committed`. Returns `allowed`, `status`, optional `reason`, `current_usage`, `limit`.
 
 ---
 
@@ -85,7 +85,7 @@ The admin module (`/admin/v1`) provides write APIs for plans, subscriptions, inv
 | Quotas | `GET /quotas/{org_id}`, `PATCH /quotas/{org_id}` | List/update org quota limits (admin/owner). |
 | Plans | `GET /plans` | List plan catalog. |
 | Billing | `GET /organizations/{org_id}/subscriptions/current`, `GET /organizations/{org_id}/invoices`, `GET /organizations/{org_id}/invoices/{id}` | Current subscription, list/detail invoices (read-only for org members). Note: invoice list returns **summary** (no `line_items`); invoice detail includes `line_items`. |
-| Internal | `POST /internal/v1/quota/check` | Quota check (INTERNAL_API_KEY). |
+| Internal | `POST /internal/v1/quota/check|reserve|commit|rollback` | Quota metering (INTERNAL_API_KEY). |
 | Admin | `GET|PATCH|... /admin/v1/*` | Orgs, subscriptions, invoices, credits, plans, actions, admins, audit, stats (platform admins only; see [04_admin.md](04_admin.md)). |
 
 ---
