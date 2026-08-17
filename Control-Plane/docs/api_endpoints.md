@@ -138,10 +138,29 @@ Prefix: `/organizations/{org_id}`.
 
 Pre-request quota / credits check; records usage on **allow**.
 
-- **Input:** Header internal API key (see top). JSON (`QuotaCheckRequest`): `organization_id`, `action_key`, `units` (≥ 1, default 1), optional `member_id`, `request_id`, `compute_units` (defaults to `units` if omitted).
-- **Output:** JSON (`QuotaCheckResponse`): `allowed`, optional `reason`, optional `current_usage` / `limit` when denied for quota limits.
+- **Input:** Header internal API key (see top). JSON (`QuotaCheckRequest`): `organization_id`, `action_key`, `units` (≥ 1, default 1), optional `member_id`, **required** `request_id` (≤ 128, `[A-Za-z0-9._:-]`, no PHI), optional `compute_units` (defaults to `units`).
+- **Output:** JSON (`QuotaCheckResponse`): `allowed`, optional `reason`, `status` (`committed` / `denied`), `request_id`, optional `current_usage` / `limit`, optional `actual_cost_cents`.
+- **Semantics:** PostgreSQL buckets are authoritative. Postpay writes `usage_ledger` with `cost_cents=0`. Exact retry returns the durable decision; payload mismatch → **409**.
 
----
+### `POST /internal/v1/quota/reserve`
+
+Hold capacity (and prepay credits) before unknown-cost work (e.g. chat).
+
+- **Input:** `organization_id`, `action_key`, `max_units`, **required** `request_id`, optional `member_id`, optional `compute_units`.
+- **Output:** `allowed`, `status` (`held` / `denied`), `request_id`, optional `expires_at`, `reason`, `current_usage` / `limit`.
+- **Conflicts:** exact held/denied replay → **200**; terminal `committed`/`rolled_back`/`expired` or fingerprint mismatch → **409**.
+
+### `POST /internal/v1/quota/commit`
+
+- **Input:** `organization_id`, `request_id`, `actual_units`, optional `compute_units` (must be ≤ reserved maxima).
+- **Output:** `status` (`committed`), `request_id`, optional `actual_cost_cents`.
+- **Errors:** missing → **404**; over max / bad args → **400**; wrong state / expired → **409**. Idempotent when already `committed`.
+
+### `POST /internal/v1/quota/rollback`
+
+- **Input:** `organization_id`, `request_id`.
+- **Output:** `status` (`rolled_back`), `request_id`.
+- **Errors:** missing → **404**; conflicts → **409**. Releases reserved capacity and wallet hold; never writes usage.
 
 ## Admin (`/admin/v1`)
 
