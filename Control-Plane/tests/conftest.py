@@ -27,8 +27,6 @@ if os.environ.get("TEST_DATABASE_URL"):
     os.environ["DATABASE_URL"] = os.environ["TEST_DATABASE_URL"]
 
 # Ensure Settings can construct even if local .env has a broken GCP JSON blob.
-# Avoid literal \n in private_key: Settings' Coolify unescaper turns JSON \n into
-# real newlines before json.loads, which would invalidate a normal dumps() value.
 _dummy_sa = {
     "type": "service_account",
     "project_id": "test",
