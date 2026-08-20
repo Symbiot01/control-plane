@@ -5,8 +5,6 @@ overwriting keys already set) before ``Settings`` is built. Containers (Coolify,
 typically inject variables only — no `.env` file required.
 """
 
-import ast
-import json
 import os
 import ssl
 from functools import lru_cache
@@ -18,6 +16,7 @@ from pydantic import BeforeValidator, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.database_url import normalize_database_url, resolve_database_url
+from app.core.gcp_credentials import parse_gcp_service_account_json
 
 
 def _load_env_into_os() -> None:
@@ -88,54 +87,8 @@ def asyncpg_connect_args_for_sslmode(sslmode: str) -> dict[str, Any]:
 
 
 def _parse_gcp_service_account_env(v: Any) -> dict[str, Any]:
-    """
-    Coolify / pydantic-settings often pass GCP JSON as a dict (decoded from env).
-    Local .env uses one JSON string. Normalize to a dict and validate required keys.
-    """
-    if isinstance(v, dict):
-        data = v
-    elif isinstance(v, str):
-        s = v.strip()
-        if not s:
-            raise ValueError(
-                "GCP_SERVICE_ACCOUNT_JSON is empty; set the full service account JSON."
-            )
-        
-        # Coolify and Docker pass environment variables through multiple layers of
-        # escaping, which can result in weird quotes and backslashes around the string.
-        # Since we know this must be a JSON object, the most bulletproof way to clean
-        # it is to just extract everything from the first '{' to the last '}'.
-        start = s.find('{')
-        end = s.rfind('}')
-        if start != -1 and end != -1:
-            s = s[start:end+1]
-        
-        # Now s is just the JSON body, but we still need to unescape any inner quotes
-        # or newlines that Docker might have escaped.
-        s = s.replace('\\"', '"').replace("\\'", "'").replace('\\n', '\n')
-        
-        try:
-            data = json.loads(s)
-        except json.JSONDecodeError:
-            try:
-                data = ast.literal_eval(s)
-            except (ValueError, SyntaxError) as e:
-                raise ValueError(
-                    "GCP_SERVICE_ACCOUNT_JSON must be valid JSON (GCP service account object)."
-                ) from e
-    else:
-        raise ValueError(
-            "GCP_SERVICE_ACCOUNT_JSON must be a JSON string or object "
-            f"(got {type(v).__name__})."
-        )
-    if not isinstance(data, dict):
-        raise ValueError("GCP_SERVICE_ACCOUNT_JSON must be a JSON object.")
-    for key in ("type", "project_id", "private_key", "client_email"):
-        if key not in data:
-            raise ValueError(
-                f"GCP_SERVICE_ACCOUNT_JSON must contain '{key}' (GCP service account format)."
-            )
-    return data
+    """Coolify / Docker / local .env service-account JSON → dict."""
+    return parse_gcp_service_account_json(v)
 
 
 class Settings(BaseSettings):
