@@ -17,6 +17,8 @@ from typing import Annotated, Any
 from pydantic import BeforeValidator, computed_field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from app.core.database_url import normalize_database_url, resolve_database_url
+
 
 def _load_env_into_os() -> None:
     """Load .env file into os.environ so POSTGRES_* etc. are available before we inject DATABASE_URL."""
@@ -37,19 +39,26 @@ def _load_env_into_os() -> None:
 
 def _inject_database_url_from_postgres() -> None:
     """
-    If DATABASE_URL is not set in the environment but POSTGRES_* are, set
-    DATABASE_URL so Settings() reads it. Run after _load_env_into_os().
+    Put a SQLAlchemy-asyncpg DATABASE_URL into os.environ before Settings() runs.
+
+    Coolify often injects postgres://, quoted values, POSTGRES_URL, or POSTGRES_*
+    parts instead of a clean postgresql+asyncpg URL. Empty/unparseable DATABASE_URL
+    is treated as unset so POSTGRES_* can still win.
     """
-    if os.environ.get("DATABASE_URL"):
-        return
-    user = os.environ.get("POSTGRES_USER")
-    password = os.environ.get("POSTGRES_PASSWORD")
-    db = os.environ.get("POSTGRES_DB")
-    if not user or not password or not db:
-        return
-    host = os.environ.get("POSTGRES_HOST", "localhost")
-    port = os.environ.get("POSTGRES_PORT", "5432")
-    os.environ["DATABASE_URL"] = f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{db}"
+    resolved = resolve_database_url(os.environ)
+    if resolved:
+        os.environ["DATABASE_URL"] = resolved
+
+
+def _parse_database_url_env(v: Any) -> str:
+    """Accept Coolify/Docker wrapping and fall back to POSTGRES_* if the URL is junk."""
+    try:
+        return normalize_database_url(v)
+    except ValueError:
+        fallback = resolve_database_url(os.environ)
+        if fallback:
+            return fallback
+        raise
 
 
 def asyncpg_connect_args_for_sslmode(sslmode: str) -> dict[str, Any]:
@@ -136,8 +145,8 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # Database – set DATABASE_URL in .env or use POSTGRES_* (we inject DATABASE_URL before Settings() if needed)
-    DATABASE_URL: str
+    # Database – DATABASE_URL or POSTGRES_* / Coolify POSTGRES_URL (normalized to postgresql+asyncpg)
+    DATABASE_URL: Annotated[str, BeforeValidator(_parse_database_url_env)]
     # libpq-compatible; default matches previous behavior (no TLS). Use require for typical managed Postgres.
     POSTGRES_SSLMODE: str = "disable"
 
