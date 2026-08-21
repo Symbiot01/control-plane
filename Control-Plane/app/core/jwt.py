@@ -9,6 +9,9 @@ from cryptography.hazmat.primitives.serialization import load_pem_private_key, l
 
 from app.core.config import settings
 
+# Must match the kid advertised in JWKS. Promote to settings.JWT_KID when rotating keys.
+JWT_KID = "control-plane-1"
+
 
 def _clean_pem_string(s: str, is_private: bool = True) -> bytes:
     import re
@@ -65,7 +68,8 @@ def issue_control_jwt(
 ) -> str:
     """
     Issue a Control JWT (RS256).
-    sub: member_id (UUID string), org_id: active org (or None), level_of_access: "super_admin", "owner", "member", or "guest".
+    sub: member_id (UUID string), org_id: active org (or None),
+    level_of_access: "super_admin", "owner", "member", "viewer", or "guest".
     """
     issuer = issuer or settings.JWT_ISSUER
     exp_min = expiration_minutes if expiration_minutes is not None else settings.JWT_EXPIRATION_MINUTES
@@ -81,7 +85,12 @@ def issue_control_jwt(
     payload["level_of_access"] = level_of_access
 
     key = load_pem_private_key(_private_key_bytes(), password=None)
-    return pyjwt.encode(payload, key, algorithm="RS256")
+    return pyjwt.encode(
+        payload,
+        key,
+        algorithm="RS256",
+        headers={"kid": JWT_KID},
+    )
 
 
 def verify_control_jwt(token: str) -> dict[str, Any]:
@@ -111,7 +120,7 @@ def build_jwks() -> dict[str, Any]:
                 "alg": "RS256",
                 "n": _int_to_b64url(numbers.n),
                 "e": _int_to_b64url(numbers.e),
-                "kid": "control-plane-1",
+                "kid": JWT_KID,
             }
         ]
     }
