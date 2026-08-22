@@ -13,7 +13,10 @@ TIERS = (TIER_STARTER,)  # Extend as needed
 # Roles (organization_members)
 ROLE_OWNER = "owner"
 ROLE_MEMBER = "member"
-ROLES = (ROLE_OWNER, ROLE_MEMBER)
+ROLE_VIEWER = "viewer"
+ROLES = (ROLE_OWNER, ROLE_MEMBER, ROLE_VIEWER)
+# Billing / products catalog — not viewers (MedRecs read-only)
+ORG_OPERATOR_ROLES = (ROLE_OWNER, ROLE_MEMBER)
 
 # Quota period
 PERIOD_PER_MINUTE = "per_minute"

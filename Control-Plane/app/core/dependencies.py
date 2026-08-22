@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
-from app.core.constants import RATE_LIMIT_PER_MINUTE, ROLE_OWNER
+from app.core.constants import ORG_OPERATOR_ROLES, RATE_LIMIT_PER_MINUTE, ROLE_OWNER
 from app.core.jwt import verify_control_jwt
 from app.db.session import get_db
 from app.utils.redis_keys import TTL_RATE_MINUTE, minute_ts, rate_limit_api_key
@@ -140,6 +140,20 @@ async def require_org_member_for_path(
         member_id=member_id,
         role=level
     )
+
+
+async def require_org_operator_for_path(
+    org_id: UUID,
+    payload: Annotated[dict, Depends(require_control_jwt)],
+) -> OrganizationMember:
+    """Require path org_id match and role is owner or member (not viewer)."""
+    membership = await require_org_member_for_path(org_id, payload)
+    if membership.role not in ORG_OPERATOR_ROLES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Insufficient role",
+        )
+    return membership
 
 
 async def require_org_owner_for_path(
