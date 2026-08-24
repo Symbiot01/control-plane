@@ -330,7 +330,7 @@ class GlobalMemberResponse(BaseModel):
 
 
 class GlobalMemberRoleUpdate(BaseModel):
-    """Update role (owner/member only)."""
+    """Update org role (owner, member, or viewer)."""
 
-    role: str = Field(..., description="Must be 'owner' or 'member'")
+    role: str = Field(..., description="Must be 'owner', 'member', or 'viewer'")
     organization_id: UUID | None = Field(None, description="Provide to assign a guest to an organization")

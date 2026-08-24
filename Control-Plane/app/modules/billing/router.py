@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.constants import INVOICE_STATUSES
-from app.core.dependencies import require_org_member_for_path
+from app.core.dependencies import require_org_operator_for_path
 from app.db.session import get_db
 from app.models.invoice import Invoice
 from app.models.organization_member import OrganizationMember
@@ -36,9 +36,9 @@ router = APIRouter(prefix="/organizations/{org_id}", tags=["billing"])
 async def get_subscription_current(
     org_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
+    _membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
 ):
-    """Get current active subscription for the org. JWT org must match path org_id."""
+    """Get current active subscription for the org. Owner/member only (not viewer)."""
     sub = await get_current_subscription_svc(db, org_id)
     if sub is None:
         return None
@@ -59,11 +59,11 @@ async def get_subscription_current(
 async def get_usage_summary(
     org_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
+    _membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
     from_dt: datetime | None = Query(None, alias="from", description="Period start (UTC); use with to"),
     to_dt: datetime | None = Query(None, alias="to", description="Period end (exclusive, UTC); use with from"),
 ):
-    """Aggregated usage from usage_ledger for [from, to). Defaults to last 30 days when both omitted."""
+    """Aggregated usage from usage_ledger for [from, to). Owner/member only (not viewer)."""
     try:
         period_start, period_end = resolve_usage_period(from_dt, to_dt)
     except ValueError as e:
@@ -77,11 +77,11 @@ async def get_usage_summary(
 async def list_invoices(
     org_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
+    _membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
     status_filter: str | None = Query(None, alias="status", description="Filter by status"),
     limit: int = Query(50, ge=1, le=100),
 ):
-    """List invoices for the org. JWT org must match path org_id."""
+    """List invoices for the org. Owner/member only (not viewer)."""
     q = select(Invoice).where(Invoice.organization_id == org_id).order_by(Invoice.created_at.desc()).limit(limit)
     if status_filter and status_filter in INVOICE_STATUSES:
         q = q.where(Invoice.status == status_filter)
@@ -95,9 +95,9 @@ async def get_invoice(
     org_id: UUID,
     invoice_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    _membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
+    _membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
 ):
-    """Get invoice detail with line items. Invoice must belong to org."""
+    """Get invoice detail with line items. Owner/member only (not viewer)."""
     result = await db.execute(
         select(Invoice).where(
             Invoice.id == invoice_id,

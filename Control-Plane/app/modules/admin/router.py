@@ -16,6 +16,7 @@ from app.core.constants import (
     ORG_STATUS_ACTIVE,
     ORG_STATUS_ARCHIVED,
     ORG_STATUS_SUSPENDED,
+    ROLES,
     SUBSCRIPTION_STATUS_ACTIVE,
     SUBSCRIPTION_STATUS_CANCELED,
 )
@@ -208,9 +209,9 @@ async def update_global_member_role(
     member_id: UUID,
     body: GlobalMemberRoleUpdate,
 ) -> GlobalMemberResponse:
-    """Update role (owner/member only). Rejects super_admin."""
-    if body.role not in ("owner", "member"):
-        raise HTTPException(status_code=400, detail="Role must be 'owner' or 'member'")
+    """Update org role (owner, member, or viewer). Rejects super_admin."""
+    if body.role not in ROLES:
+        raise HTTPException(status_code=400, detail="Role must be 'owner', 'member', or 'viewer'")
 
     # Check if they belong to an org
     result = await db.execute(select(OrganizationMember).where(OrganizationMember.member_id == member_id))

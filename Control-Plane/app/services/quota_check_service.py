@@ -21,9 +21,11 @@ from app.core.constants import (
     QUOTA_STATUS_HELD,
     QUOTA_STATUS_PENDING,
     QUOTA_STATUS_ROLLED_BACK,
+    ROLE_VIEWER,
 )
 from app.models.organization import Organization
 from app.models.organization_entitlement import OrganizationEntitlement
+from app.models.organization_member import OrganizationMember
 from app.models.quota_action import QuotaAction
 from app.models.quota_check_request import QuotaCheckRequest
 from app.services.audit_service import log_audit
@@ -148,6 +150,31 @@ async def _validate_common(
     return org, action, None, "allow"
 
 
+async def _deny_reason_for_member(
+    db: AsyncSession,
+    org_id: UUID,
+    member_id: UUID | None,
+) -> tuple[str | None, str | None]:
+    """
+    If member_id is set, require membership and reject viewers.
+    Returns (deny_reason, audit_suffix) or (None, None) when allowed / member_id omitted.
+    """
+    if member_id is None:
+        return None, None
+    result = await db.execute(
+        select(OrganizationMember).where(
+            OrganizationMember.organization_id == org_id,
+            OrganizationMember.member_id == member_id,
+        )
+    )
+    om = result.scalars().one_or_none()
+    if om is None:
+        return "member not in organization", "deny:member_not_in_org"
+    if om.role == ROLE_VIEWER:
+        return "viewer_readonly", "deny:viewer_readonly"
+    return None, None
+
+
 async def quota_check(
     redis: Redis,
     db: AsyncSession,
@@ -192,6 +219,10 @@ async def quota_check(
     org, action, deny_reason, audit = await _validate_common(db, redis, org_id, action_key)
     if deny_reason:
         return await _deny_pending(db, row, deny_reason, action_key, org_id, audit)
+
+    member_deny, member_audit = await _deny_reason_for_member(db, org_id, member_id)
+    if member_deny:
+        return await _deny_pending(db, row, member_deny, action_key, org_id, member_audit or "deny")
 
     assert org is not None and action is not None
     row.action_id = action.id
@@ -307,6 +338,10 @@ async def quota_reserve(
     org, action, deny_reason, audit = await _validate_common(db, redis, org_id, action_key)
     if deny_reason:
         return await _deny_pending(db, row, deny_reason, action_key, org_id, audit)
+
+    member_deny, member_audit = await _deny_reason_for_member(db, org_id, member_id)
+    if member_deny:
+        return await _deny_pending(db, row, member_deny, action_key, org_id, member_audit or "deny")
 
     assert org is not None and action is not None
     row.action_id = action.id

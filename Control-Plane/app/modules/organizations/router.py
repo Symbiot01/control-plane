@@ -8,12 +8,13 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.constants import ROLES
+from app.core.constants import ROLE_OWNER, ROLES
 from app.core.dependencies import (
     get_current_member,
     rate_limit_per_org,
     require_org_owner_for_path,
     require_org_member_for_path,
+    require_org_operator_for_path,
     require_control_jwt,
 )
 from app.db.session import get_db
@@ -70,9 +71,9 @@ async def get_organizations_me(
 async def get_organization_products(
     org_id: UUID,
     db: Annotated[AsyncSession, Depends(get_db)],
-    membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
+    membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
 ):
-    """Get all products this organization is entitled to use."""
+    """Get all products this organization is entitled to use. Owner/member only (not viewer)."""
     from app.models.organization_entitlement import OrganizationEntitlement
     from app.models.product import Product
     
@@ -285,8 +286,8 @@ async def get_org_members(
     membership: Annotated[OrganizationMember, Depends(require_org_member_for_path)],
     _rl: Annotated[None, Depends(rate_limit_per_org)],
 ):
-    """List all members of the org. Restricted to owner and admin."""
-    if membership.role not in ("owner", "admin"):
+    """List all members of the org. Restricted to owner."""
+    if membership.role != ROLE_OWNER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Insufficient role to view members",
