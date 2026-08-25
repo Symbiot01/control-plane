@@ -1,9 +1,14 @@
 """Organization-related Pydantic schemas."""
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, Field
+
+from app.core.constants import ROLE_MEMBER, ROLE_OWNER, ROLE_VIEWER
+
+OrgRoleLiteral = Literal["owner", "member", "viewer"]
 
 
 class OrganizationCreate(BaseModel):
@@ -73,14 +78,20 @@ class InviteMemberRequest(BaseModel):
     """Request body for POST /organizations/:id/invite."""
 
     email: str = Field(..., description="Email of member to invite")
-    role: str = Field(..., description="Role to assign (owner, admin, member, viewer)")
+    role: OrgRoleLiteral = Field(
+        ...,
+        description=f"Role to assign ({ROLE_OWNER}, {ROLE_MEMBER}, or {ROLE_VIEWER})",
+    )
     expiration_hours: int = Field(72, description="How many hours until the invite expires.")
 
 
 class UpdateMemberRoleRequest(BaseModel):
     """Request body for PATCH /organizations/:id/member/:member_id."""
 
-    role: str = Field(..., description="New role")
+    role: OrgRoleLiteral = Field(
+        ...,
+        description=f"New role ({ROLE_OWNER}, {ROLE_MEMBER}, or {ROLE_VIEWER})",
+    )
 
 
 class OrganizationMemberResponse(BaseModel):

@@ -3,9 +3,9 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.schemas.organization import OrganizationWithRole
+from app.schemas.organization import EntitlementResponse, OrganizationWithRole
 
 
 class MemberProfile(BaseModel):
@@ -17,5 +17,6 @@ class MemberProfile(BaseModel):
     is_active: bool
     created_at: datetime
     organization: OrganizationWithRole | None = None
+    entitlements: list[EntitlementResponse] = Field(default_factory=list)
 
     model_config = {"from_attributes": True}
