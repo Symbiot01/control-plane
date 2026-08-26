@@ -101,7 +101,7 @@ These are the mismatches that will break against the new CP.
 | Most product routes verify a **Firebase ID token** (`get_tenant_context` → `require_authenticated_user`) | Product APIs verify **Control JWT** via JWKS (one verifier shared with editor + OCR) |
 | Tenant from **`X-Org-Id` + local membership** | **Delete `X-Org-Id`.** Tenant = JWT `org_id` only. Do not accept `organization_id` in JSON |
 | JWT decoder reads `roles[]` | Read `level_of_access`. `roles` is always absent → `[]` |
-| Local roles `owner/admin/member/viewer` | CP roles: `owner` and `member` only. Do not mint admin/viewer that look like CP roles |
+| Local roles `owner/admin/member/viewer` | CP roles: `owner`, `member`, **`viewer`**. Map unknown → **viewer** (never member). Viewer = MedRecs GET only; no quota consume |
 | `GET /api/me/organizations` syncs multi-org from `GET /organizations/me` | One org. Session projection from MedRecs exchange. No org picker |
 | Quota client exists; **use cases never call it**; GET cases ungated | GET stays ungated **by design** while suspended. Quota **before models**. Use cases call `quota_gate.allow(...)` |
 | `QuotaDenied` always HTTP **403** | Map exact `reason` strings (402 / 403 / 429 / 400) |
@@ -161,6 +161,7 @@ from `GET /members/me` when needed.
 |---|---|
 | **Guest** (Firebase user, no membership) | `sub`, `iss`, `iat`, `exp`, `level_of_access: "guest"`. **No `org_id` key. No `roles`.** |
 | **Member / owner** | same + `org_id` + `level_of_access: "member"` or `"owner"` |
+| **Viewer** | same + `org_id` + `level_of_access: "viewer"` (MedRecs read-only; no billing/products catalog; no quota consume) |
 | **Super admin** | `sub`, `iss`, `iat`, `exp`, `level_of_access: "super_admin"`. **No `org_id`**, even if they also have a membership |
 
 Audience is **not** checked. Product must still require:
@@ -186,6 +187,7 @@ clocks do not flap 401s.
 |---|---|---|
 | `owner` | allow if JWT `org_id` matches | quota must `allowed: true` |
 | `member` | same | same |
+| `viewer` | **allow** if JWT `org_id` matches | **403** before quota; if quota is called with `member_id=sub` → `{allowed: false, reason: "viewer_readonly"}` |
 | `guest` | **403** | **403** |
 | `super_admin` | **403** (use `/admin/v1`) | **403**. Do **not** map to owner |
 | org suspended / archived | **GET allowed** | **Denied** by quota (`organization status is …`) |
@@ -226,9 +228,10 @@ Local projection must **not**:
 
 - let the client pick another org
 - treat stale local membership as authorization when JWT `org_id` differs
-- mint `admin` / `viewer` from CP. A local “viewer” who is a CP `member`
-  can still mutate. Collapse to owner/member, or a **stricter** MedRecs ACL
-  that never loosens CP.
+- mint `admin` from CP. Fold unknown CP roles to **`viewer`**, not member.
+  Viewer is a first-class CP role: JWT `org_id` + `level_of_access: "viewer"`.
+  MedRecs must 403 mutating routes before quota. Always pass JWT `sub` as
+  quota `member_id` so CP can deny `viewer_readonly`.
 
 ### User-facing CP reads (MedRecs proxies these)
 
@@ -238,14 +241,14 @@ The SPA does **not** call these. MedRecs calls them with the Control JWT
 | CP endpoint | Shape | MedRecs use |
 |---|---|---|
 | `GET /organizations/me` | **Array**. 0–1 orgs + `role` | Do not expose as a multi-org picker |
-| `GET /members/me` | `{ id, email, display_name, is_active, created_at, organization: { ...org, role } \| null }` | Preferred “who am I + my one org” for `/api/auth/session` |
+| `GET /members/me` | `{ id, email, display_name, is_active, created_at, organization, entitlements[] }` | Preferred “who am I + org + product entitlements” for `/api/auth/session`. **Viewers use this** (not products). |
 | `GET /organizations/{org_id}` | org including `entitlements`; JWT `org_id` must match | Session / settings UX (`status`, entitlements). **Not** a GET lock |
-| `GET /organizations/{org_id}/products` | entitled products | “not provisioned” UX |
+| `GET /organizations/{org_id}/products` | entitled products | Owner/member only. **Viewer → 403.** Use `/members/me` entitlements. |
 
 Org objects include: `id`, `name`, `slug`, `status`, `tier`,
 `prepaid_balance_cents`, `entitlements[]`, timestamps, plus `role`.
 
-Usage/billing reads (member of that org):
+Usage/billing reads (**owner/member only**; viewer → **403**):
 
 - `GET /organizations/{org_id}/subscriptions/current`
 - `GET /organizations/{org_id}/invoices` and `.../invoices/{id}`
@@ -728,7 +731,7 @@ These were the original MedRecs blockers. Answers are from this repo.
 | 8 | Hold TTL / dead worker | `expires_at` + in-process reaper (default 1h TTL). Dead worker → `expired` (capacity + wallet hold released). Late commit → **409**. |
 | 9 | Quota HTTP status | 401 bad key; **200** `{allowed, reason, status}` for business allow/deny; **404** missing; **400** validation; **409** conflicts; 500 unhandled. Fail-closed on 401/5xx/timeout. |
 | 10 | Network / key | Key only. `/internal/v1` must be private. Rotate `INTERNAL_API_KEY` with CP. Never in the browser. |
-| 11 | `admin` / `viewer` | **Will not add in this build.** Only `owner` and `member`. Collapse MedRecs roles. |
+| 11 | `admin` / `viewer` | **`viewer` is a CP role.** JWT `org_id` + `level_of_access: "viewer"`. MedRecs: GET allow; mutate 403; pass `member_id=sub` so quota returns `viewer_readonly`. Fold unknown → viewer. Do **not** add `admin`. |
 | 12 | Org switch | **Final: one org.** No switch endpoint. **Delete `X-Org-Id`** (400 if sent). |
 | 13 | Guest token | Store only for invite-accept + re-exchange. 403 on all MedRecs case APIs. |
 | 14 | Super admin on product APIs | **Deny.** No `org_id` on that JWT. `/admin/v1` only. Do not map to owner. |
@@ -750,7 +753,7 @@ in product, then freeze here.
 | Topic | Required (not optional) | Still a MedRecs choice |
 |---|---|---|
 | Org picker / `X-Org-Id` | **Delete.** 400 if header sent. No `organization_id` in JSON. | **Migration:** which local org is the surviving CP membership; leftover case data plan |
-| `admin` / `viewer` | **Must not look like CP roles.** Map owner/member only. A local viewer who is a CP `member` can still mutate if you only check the overlay | Delete those roles, or a **stricter** MedRecs ACL that never loosens CP |
+| `admin` / `viewer` | **`viewer` is enforced by CP** (billing/products 403; quota deny). Map unknown → viewer. Never map a local “viewer” who is a CP `member`. Do not mint `admin`. | Delete local `admin`, or keep a **stricter** MedRecs ACL that never loosens CP |
 | Billing UI | No second ledger. Writes stay on CP admin | Org-console **link** (required default). Proxy usage summary only if needed |
 | Invite UX | SPA does not call CP. Re-exchange after accept. Canonical deep-link is `{ORG_CONSOLE_URL}/invite?token=` | MedRecs invite page that **proxies** accept vs send users to org console |
 | Pipeline metering | **Frozen:** analyze/report/chronology/synthesis = per-run `check` `units=1`. OCR = pages. Chat = reserve/commit with server cap | Token-counting rule for chat (prompt+completion vs completion; cached tokens) |
@@ -867,9 +870,11 @@ There is **no** per-request org-status lock on reads.
 
 Required on **every** org-scoped MedRecs route (reads included):
 
-- `level_of_access` in `{owner, member}`
+- `level_of_access` in `{owner, member, viewer}` for GET
+- Mutating / metered work: `level_of_access` in `{owner, member}` only (viewer → **403** before quota)
 - `org_id` present and equal to the resource’s org
 - GCS object keys / signed URLs prefixed by that `org_id` (cross-org leak)
+- Quota `member_id` = JWT `sub` (viewer → `{allowed: false, reason: "viewer_readonly"}`)
 
 For **processing** (not GET): quota `allowed: true` (subscription,
 entitlement, limits, credits, **and** org status via quota). Quota Redis
@@ -906,7 +911,7 @@ gates GET. Processing stop is quota (not instant; Redis status TTL ~10 min).
 | Tempting MedRecs choice | Why to reject it |
 |---|---|
 | 403 GET on suspend via per-request `GET /organizations/{id}` | **Rejected.** Login and reads stay allowed. Quota stops processing. Org GET is session/UX only. |
-| Keep `admin` / `viewer` as CP-looking roles | CP will not enforce them. A “viewer” who is a CP `member` can still pass quota and mutate if your use case only checks the local enum. Collapse to owner/member or keep viewer as a **separate** MedRecs ACL that is stricter than CP, never looser. |
+| Keep `admin` as a CP-looking role / treat CP `member` as local viewer | **`viewer` is a real CP role.** Fold unknown → viewer. A CP `member` must not be treated as read-only. Always pass `member_id=sub` on quota. |
 | Map `super_admin` → owner “so we can debug cases” | Super-admin JWT has **no** `org_id`. That is impersonation. Use CP admin + a future impersonation API, not MedRecs. |
 | `CONTROL_PLANE_ENABLED=false` in staging | Staging will lie; someone will ship it. Use a real CP (or a recorded mock with the same deny reasons). Flag is local laptop only. |
 | Reserve pipeline with `max_units=50000` “to be safe” | Prepaid hold can lock the whole wallet. **Do not reserve analyze.** Chat cap is server-side (e.g. 8k). OCR = known pages. Reject client-supplied caps. |
@@ -1041,7 +1046,8 @@ product needs staff-in-case or multi-product isolation.
 - [ ] JWT `org_id` matches the resource on GET and writes; GCS keys prefixed by that `org_id`. **No** per-request org-status lock on GET (reads stay allowed while suspended)
 - [ ] **Delete `X-Org-Id`** (400 if sent); no client `organization_id`; Celery reads the job row
 - [ ] One JWT verifier (MedRecs + editor + OCR); `iss` + `level_of_access`; join users by `sub`
-- [ ] `owner`/`member` only; 403 guest and super_admin; no admin/viewer that look like CP roles
+- [ ] `owner`/`member`/`viewer`; GET allow for viewer; 403 mutate for viewer/guest/super_admin; fold unknown → viewer
+- [ ] Capabilities from `GET /members/me` entitlements (do **not** call `GET .../products` as viewer — 403)
 - [ ] `quota_gate.allow(...)` on OCR / analyze / chat / reports; one `action_key` constants module; tests mock HTTP, not the use case
 - [ ] Metering freeze: analyze/report/chronology = `check` `units=1`; OCR = pages; **chat only** reserve/commit with server cap (commit `actual_units` ≤ cap)
 - [ ] Stable UUID `request_id` on the job row; deny `reason` → 402/403/429 (suspended processing → 403)

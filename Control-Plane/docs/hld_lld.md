@@ -56,8 +56,10 @@ lock on reads. GCS paths still must match JWT `org_id` (other-org leak).
 | Super admin | CP `/admin/v1` | Control JWT `super_admin` | Plans, entitlements, seed |
 
 **Trust rules:** tenant = JWT `org_id` (no `X-Org-Id`, no `organization_id` in
-JSON). Roles = `level_of_access` `owner`\|`member` only. Guest / super_admin
-→ 403 on cases. Quota blocks **processing** when suspended; reads stay open.
+JSON). Roles = `level_of_access` `owner`\|`member`\|`viewer`. Guest / super_admin
+→ 403 on cases. Viewer → GET cases/files/history only; mutate 403 before quota;
+quota with `member_id=sub` returns `viewer_readonly`. Quota blocks **processing**
+when suspended; reads stay open.
 
 ---
 
@@ -69,7 +71,10 @@ JSON). Roles = `level_of_access` `owner`\|`member` only. Guest / super_admin
 2. MedRecs: `POST {CP}/auth/exchange` `{id_token}` → `{access_token, token_type: Bearer, expires_in, has_pending_invites}`.
 3. JWT (RS256, `kid: control-plane-1`): `sub` = CP `member_id`, `iss`, `iat`, `exp`, optional `org_id`, `level_of_access`. **No `roles[]`.** Verify via `{CP}/.well-known/jwks.json`. Require `CONTROL_PLANE_JWT_ISSUER`.
 4. Upsert local `users` on `control_member_id = sub`. Join by `sub`, not email.
-5. `GET {MEDRECS}/api/auth/session` = projection (`GET {CP}/members/me` + products). SPA never calls CP. Suspended orgs may still get a session (reads allowed).
+5. `GET {MEDRECS}/api/auth/session` = projection (`GET {CP}/members/me` including
+   `entitlements[]` + products). SPA never calls CP. Suspended orgs may still get a
+   session (reads allowed). Viewers must **not** call `GET .../products` (403);
+   use `/members/me` entitlements.
 6. Refresh: `getIdToken(true)` → MedRecs exchange again. ~30 min TTL. Quota 402/403 ≠ logout.
 7. After invite accept, **exchange again** (accept does not mint a new JWT).
 
@@ -80,7 +85,8 @@ hosts an invite page.
 
 Middleware, before use cases:
 
-1. Verify JWT. Require `org_id` + `level_of_access` in `{owner, member}`.
+1. Verify JWT. Require `org_id` + `level_of_access` in `{owner, member, viewer}` for GET.
+   Mutating / metered: `{owner, member}` only (viewer → 403 before quota).
 2. Resource `org_id` must equal JWT `org_id`. Else 403.
 3. **Do not** require `organization.status == active` on GET. Suspended
    tenants may read cases, files, history, and existing URLs.
@@ -88,6 +94,7 @@ Middleware, before use cases:
    cross-org access). Quota does not see downloads. Status is **not** checked.
 5. Unmetered writes (PATCH, upload) are **not** blocked by quota. Default:
    same as GET (allowed while suspended) unless product later gates them.
+   **Exception:** viewer must still be denied on writes.
 
 ### 3. Quota (before expensive work only)
 
