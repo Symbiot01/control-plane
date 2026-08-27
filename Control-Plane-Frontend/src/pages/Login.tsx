@@ -23,6 +23,12 @@ export default function Login() {
     if (levelOfAccess === 'super_admin') {
       return <Navigate to="/admin/dashboard" replace />;
     }
+    if (levelOfAccess === 'viewer') {
+      return <Navigate to="/viewer" replace />;
+    }
+    if (levelOfAccess === 'guest') {
+      return <Navigate to="/guest" replace />;
+    }
     return <Navigate to="/overview" replace />;
   }
 

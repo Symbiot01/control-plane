@@ -120,6 +120,16 @@ export default function InviteMemberModal({ isOpen, onClose, orgId }: InviteMemb
                   />
 
                   <RoleOption 
+                    id="role-viewer"
+                    title="Viewer"
+                    description="Read-only in MedRecs; cannot create, process, or chat."
+                    value="viewer"
+                    currentValue={role}
+                    onChange={(v) => setRole(v)}
+                    icon="visibility"
+                  />
+
+                  <RoleOption 
                     id="role-owner"
                     title="Owner"
                     description="Full administrative and billing access."

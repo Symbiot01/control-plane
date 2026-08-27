@@ -67,6 +67,9 @@ export default function InviteSignup() {
     if (levelOfAccess === 'super_admin') {
       return <Navigate to="/admin/dashboard" replace />;
     }
+    if (levelOfAccess === 'viewer') {
+      return <Navigate to="/viewer" replace />;
+    }
     return <Navigate to="/overview" replace />;
   }
 

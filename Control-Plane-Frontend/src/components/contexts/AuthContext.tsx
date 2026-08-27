@@ -17,13 +17,13 @@ import { jwtDecode } from 'jwt-decode';
 interface DecodedToken {
   sub: string;
   org_id?: string;
-  level_of_access: 'super_admin' | 'owner' | 'member' | 'guest';
+  level_of_access: 'super_admin' | 'owner' | 'member' | 'viewer' | 'guest';
 }
 
 interface AuthState {
   user: User | null;
   token: string | null;
-  levelOfAccess: 'super_admin' | 'owner' | 'member' | 'guest' | null;
+  levelOfAccess: 'super_admin' | 'owner' | 'member' | 'viewer' | 'guest' | null;
   hasPendingInvites: boolean;
   loading: boolean;
   error: string | null;
