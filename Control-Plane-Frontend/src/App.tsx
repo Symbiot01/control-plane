@@ -15,6 +15,7 @@ import Onboarding from "./pages/Onboarding";
 import OrganizationCreation from "./pages/OrganizationCreation";
 import RoleDashboard from "./pages/RoleDashboard";
 import GuestDashboard from "./pages/GuestDashboard";
+import ViewerDashboard from "./pages/ViewerDashboard";
 import NotFound from "./pages/NotFound";
 
 import AdminDashboard from "./pages/admin/AdminDashboard";
@@ -65,6 +66,9 @@ function IndexRedirect() {
   if (levelOfAccess === 'guest') {
     return <Navigate to="/guest" replace />;
   }
+  if (levelOfAccess === 'viewer') {
+    return <Navigate to="/viewer" replace />;
+  }
   return <Navigate to="/overview" replace />;
 }
 
@@ -82,6 +86,7 @@ const App = () => (
               <Route path="/" element={<ProtectedRoute><IndexRedirect /></ProtectedRoute>} />
               <Route path="/overview" element={<ProtectedRoute><RoleDashboard /></ProtectedRoute>} />
               <Route path="/guest" element={<ProtectedRoute><GuestDashboard /></ProtectedRoute>} />
+              <Route path="/viewer" element={<ProtectedRoute><ViewerDashboard /></ProtectedRoute>} />
               <Route path="/onboarding" element={<ProtectedRoute><Onboarding /></ProtectedRoute>} />
               <Route path="/onboarding/organization" element={<ProtectedRoute><OrganizationCreation /></ProtectedRoute>} />
               

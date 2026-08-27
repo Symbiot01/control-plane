@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/components/contexts/AuthContext';
 import { useTheme } from '@/components/theme-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -16,6 +17,10 @@ export default function RoleDashboard() {
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<{id: string, name: string} | null>(null);
   const [editOrgName, setEditOrgName] = useState('');
+
+  if (levelOfAccess === 'viewer') {
+    return <Navigate to="/viewer" replace />;
+  }
 
   const { data: profile } = useQuery({ queryKey: ['profile'], queryFn: getMyProfile });
   const { data: myOrgs } = useQuery({ queryKey: ['myOrgs'], queryFn: getMyOrganizations });
@@ -129,7 +134,7 @@ export default function RoleDashboard() {
         <nav className="flex-1 py-lg px-md space-y-sm overflow-y-auto overflow-x-hidden min-h-0">
           <NavItem icon="dashboard" label="Dashboard" active={activeTab === 'Dashboard'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Dashboard')} />
           <NavItem icon="apps" label="Products" active={activeTab === 'Products'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Products')} />
-          {levelOfAccess !== 'member' && (
+          {levelOfAccess === 'owner' && (
             <>
               <NavItem icon="group" label="Members" active={activeTab === 'Members'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Members')} />
               <NavItem icon="receipt_long" label="Billing" active={activeTab === 'Billing'} collapsed={isSidebarCollapsed} onClick={() => setActiveTab('Billing')} />
@@ -397,6 +402,7 @@ export default function RoleDashboard() {
                               className="bg-background text-foreground border-2 border-border font-mono text-xs uppercase p-1 rounded-none !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                               <option value="member">Member</option>
+                              <option value="viewer">Viewer</option>
                               <option value="owner">Owner</option>
                             </select>
                             
