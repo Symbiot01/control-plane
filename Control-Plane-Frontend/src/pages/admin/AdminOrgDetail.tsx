@@ -126,7 +126,7 @@ export default function AdminOrgDetail() {
   });
 
   const updateRoleMut = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: 'owner' | 'member' }) => 
+    mutationFn: ({ memberId, role }: { memberId: string; role: 'owner' | 'member' | 'viewer' }) => 
       updateMemberRole(memberId, role, orgId),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'org', orgId, 'members'] });
@@ -136,9 +136,9 @@ export default function AdminOrgDetail() {
   });
 
   const handleRoleChange = (memberId: string, currentRole: string, newRole: string) => {
-    if (newRole !== 'owner' && newRole !== 'member') return;
+    if (newRole !== 'owner' && newRole !== 'member' && newRole !== 'viewer') return;
     if (newRole === currentRole.toLowerCase()) return;
-    updateRoleMut.mutate({ memberId, role: newRole as 'owner' | 'member' });
+    updateRoleMut.mutate({ memberId, role: newRole as 'owner' | 'member' | 'viewer' });
   };
 
   const updateOrgMut = useMutation({
@@ -532,7 +532,7 @@ export default function AdminOrgDetail() {
                   <TableCell className="text-xs">{m.email}</TableCell>
                   <TableCell className="text-xs">{m.display_name || '—'}</TableCell>
                   <TableCell>
-                    {m.role?.toLowerCase() === 'owner' || m.role?.toLowerCase() === 'member' ? (
+                    {m.role?.toLowerCase() === 'owner' || m.role?.toLowerCase() === 'member' || m.role?.toLowerCase() === 'viewer' ? (
                       <div className="flex items-center">
                         <select
                           className="h-8 w-32 rounded-md border border-input bg-background px-3 py-1 text-xs shadow-sm focus:outline-none focus:ring-1 focus:ring-ring capitalize cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
@@ -542,6 +542,7 @@ export default function AdminOrgDetail() {
                         >
                           <option value="owner">Owner</option>
                           <option value="member">Member</option>
+                          <option value="viewer">Viewer</option>
                         </select>
                       </div>
                     ) : (

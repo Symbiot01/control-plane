@@ -17,7 +17,7 @@ import { Label } from '@/components/ui/label';
 function AssignOrgDialog({ member, onAssigned }: { member: AdminMemberResponse, onAssigned: () => void }) {
   const [open, setOpen] = useState(false);
   const [selectedOrg, setSelectedOrg] = useState<string>('');
-  const [selectedRole, setSelectedRole] = useState<'owner' | 'member'>('member');
+  const [selectedRole, setSelectedRole] = useState<'owner' | 'member' | 'viewer'>('member');
   
   const { data: orgs, isLoading: orgsLoading } = useQuery({
     queryKey: ['admin', 'organizations'],
@@ -68,13 +68,14 @@ function AssignOrgDialog({ member, onAssigned }: { member: AdminMemberResponse, 
           </div>
           <div className="space-y-2">
             <Label>Select Role</Label>
-            <Select value={selectedRole} onValueChange={(val) => setSelectedRole(val as 'owner' | 'member')}>
+            <Select value={selectedRole} onValueChange={(val) => setSelectedRole(val as 'owner' | 'member' | 'viewer')}>
               <SelectTrigger>
                 <SelectValue placeholder="Select a role" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="owner">Owner</SelectItem>
                 <SelectItem value="member">Member</SelectItem>
+                <SelectItem value="viewer">Viewer</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -117,7 +118,7 @@ export default function AdminAccounts() {
   });
 
   const updateRoleMut = useMutation({
-    mutationFn: ({ memberId, role }: { memberId: string; role: 'owner' | 'member' }) => updateMemberRole(memberId, role),
+    mutationFn: ({ memberId, role }: { memberId: string; role: 'owner' | 'member' | 'viewer' }) => updateMemberRole(memberId, role),
     onSuccess: () => { 
       qc.invalidateQueries({ queryKey: ['admin', 'members'] }); 
       toast({ title: 'Role updated successfully' }); 
@@ -130,12 +131,13 @@ export default function AdminAccounts() {
   const superAdmins = members?.filter(m => m.global_role === 'super_admin') || [];
   const owners = members?.filter(m => m.global_role === 'owner') || [];
   const orgMembers = members?.filter(m => m.global_role === 'member') || [];
+  const viewers = members?.filter(m => m.global_role === 'viewer') || [];
   const guests = members?.filter(m => m.global_role === 'guest') || [];
 
   const handleRoleChange = (memberId: string, currentRole: GlobalRole, newRole: string) => {
-    if (newRole !== 'owner' && newRole !== 'member') return;
+    if (newRole !== 'owner' && newRole !== 'member' && newRole !== 'viewer') return;
     if (newRole === currentRole) return;
-    updateRoleMut.mutate({ memberId, role: newRole as 'owner' | 'member' });
+    updateRoleMut.mutate({ memberId, role: newRole as 'owner' | 'member' | 'viewer' });
   };
 
   const renderTable = (groupTitle: string, groupMembers: AdminMemberResponse[], showRoleSelect: boolean, allowDelete: boolean) => {
@@ -185,6 +187,7 @@ export default function AdminAccounts() {
                         >
                           <option value="owner">Owner</option>
                           <option value="member">Member</option>
+                          <option value="viewer">Viewer</option>
                         </select>
                       ) : (
                         <>
@@ -235,6 +238,7 @@ export default function AdminAccounts() {
         {renderTable("Super Admins", superAdmins, false, false)}
         {renderTable("Workspace Owners", owners, true, false)}
         {renderTable("Workspace Members", orgMembers, true, true)}
+        {renderTable("Workspace Viewers", viewers, true, true)}
         {renderTable("Guests / Unassigned", guests, false, true)}
       </div>
     </div>

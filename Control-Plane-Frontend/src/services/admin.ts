@@ -107,7 +107,7 @@ export const removeAdmin = (adminId: string) =>
 
 // Global Members
 export const getAdminMembers = () => apiClient<import('@/types/api').AdminMemberResponse[]>(`${A}/members`);
-export const updateMemberRole = (memberId: string, role: 'owner' | 'member', organization_id?: string) => 
+export const updateMemberRole = (memberId: string, role: 'owner' | 'member' | 'viewer', organization_id?: string) => 
   apiClient(`${A}/members/${memberId}/role`, { method: 'PATCH', body: JSON.stringify({ role, ...(organization_id ? { organization_id } : {}) }) });
 export const deleteAdminMember = (memberId: string) => apiClient(`${A}/members/${memberId}`, { method: 'DELETE' });
 

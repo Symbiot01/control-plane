@@ -25,10 +25,14 @@ export interface MemberProfile {
   is_active: boolean;
   created_at: string;
   organization: OrganizationWithRole | null;
+  entitlements?: Entitlement[];
 }
 
 export interface Entitlement {
   product_key: string;
+  product_name?: string | null;
+  product_link?: string | null;
+  is_active?: boolean | null;
   expires_at: string | null;
   max_compute_units: number | null;
   created_at: string;
@@ -166,7 +170,7 @@ export interface AdminOrgMember {
   created_at?: string;
 }
 
-export type GlobalRole = 'super_admin' | 'owner' | 'member' | 'guest';
+export type GlobalRole = 'super_admin' | 'owner' | 'member' | 'viewer' | 'guest';
 
 export interface AdminMemberResponse {
   member_id: string;
