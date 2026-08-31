@@ -35,9 +35,5 @@ class OrganizationEntitlement(Base):
         return self.product.name if self.product else ""
 
     @property
-    def product_link(self) -> str | None:
-        return self.product.product_link if self.product else None
-
-    @property
     def is_active(self) -> bool:
         return self.product.is_active if self.product else False
