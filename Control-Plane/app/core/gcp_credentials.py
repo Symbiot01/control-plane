@@ -107,4 +107,8 @@ def parse_gcp_service_account_json(v: Any) -> dict[str, Any]:
             raise ValueError(
                 f"GCP_SERVICE_ACCOUNT_JSON must contain '{key}' (GCP service account format)."
             )
+            
+    if "private_key" in data and isinstance(data["private_key"], str):
+        data["private_key"] = data["private_key"].replace("\\n", "\n")
+        
     return data

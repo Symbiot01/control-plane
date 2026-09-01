@@ -126,6 +126,10 @@ class Settings(BaseSettings):
     # Frontend URLs
     ORG_CONSOLE_URL: str
 
+    # Resend Email Integration
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = "onboarding@resend.dev"
+
     # Quota reservation hold TTL and in-process reaper
     QUOTA_HOLD_TTL_SECONDS: int = 3600
     QUOTA_REAPER_INTERVAL_SECONDS: int = 60
@@ -145,6 +149,13 @@ class Settings(BaseSettings):
                 + f" (got {v!r})"
             )
         return mode
+
+    @field_validator("JWT_PRIVATE_KEY", "JWT_PUBLIC_KEY", mode="before")
+    @classmethod
+    def _fix_jwt_newlines(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.replace("\\n", "\n")
+        return v
 
     @computed_field
     @property
