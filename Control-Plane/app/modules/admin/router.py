@@ -31,6 +31,7 @@ from app.models.organization_member import OrganizationMember
 from app.models.organization_subscription import OrganizationSubscription
 from app.models.plan import Plan
 from app.models.product import Product
+from app.models.deliverable import Deliverable
 from app.models.quota_action import QuotaAction
 from app.models.quota_action_price import QuotaActionPrice
 from app.services.org_service import create_organization, update_member_role
@@ -73,6 +74,9 @@ from app.modules.admin.schemas import (
     ProductResponse,
     ProductCreate,
     ProductUpdate,
+    DeliverableResponse,
+    DeliverableCreate,
+    DeliverableUpdate,
     EntitlementGrantRequest,
     SubscriptionChangePlanRequest,
     SubscriptionStatusUpdate,
@@ -1352,6 +1356,90 @@ async def get_audit_log_admin(
     rows = result.scalars().all()
     return [AdminAuditLogResponse.model_validate(r) for r in rows]
 
+# --- Deliverables ---
+
+@admin_router.get("/deliverables", response_model=list[DeliverableResponse])
+async def list_deliverables(
+    admin: Annotated[Member, Depends(require_super_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[DeliverableResponse]:
+    """List all registered deliverables."""
+    result = await db.execute(select(Deliverable).order_by(Deliverable.name))
+    return [DeliverableResponse.model_validate(r) for r in result.scalars().all()]
+
+@admin_router.post("/deliverables", response_model=DeliverableResponse, status_code=status.HTTP_201_CREATED)
+async def create_deliverable(
+    admin: Annotated[Member, Depends(require_super_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    body: DeliverableCreate,
+) -> DeliverableResponse:
+    """Create a new deliverable."""
+    import uuid
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    dev = Deliverable(
+        id=uuid.uuid4(),
+        name=body.name,
+        description=body.description,
+        deliverable_link=body.deliverable_link,
+        created_at=now,
+    )
+    db.add(dev)
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=400, detail="Deliverable name already exists")
+    await log_admin_action(db, admin.id, "deliverable.create", "deliverable", dev.id)
+    return DeliverableResponse.model_validate(dev)
+
+@admin_router.patch("/deliverables/{deliverable_id}", response_model=DeliverableResponse)
+async def update_deliverable(
+    deliverable_id: UUID,
+    body: DeliverableUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    admin: Annotated[Member, Depends(require_super_admin)],
+):
+    """Update a deliverable."""
+    result = await db.execute(select(Deliverable).where(Deliverable.id == deliverable_id))
+    dev = result.scalars().one_or_none()
+    if dev is None:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+
+    updates_made = False
+    if body.name is not None:
+        dev.name = body.name
+        updates_made = True
+    
+    update_data = body.model_dump(exclude_unset=True)
+    if "description" in update_data:
+        dev.description = update_data["description"]
+        updates_made = True
+    if "deliverable_link" in update_data:
+        dev.deliverable_link = update_data["deliverable_link"]
+        updates_made = True
+
+    if updates_made:
+        await db.commit()
+        await log_admin_action(db, admin.id, "deliverable.update", "deliverable", dev.id)
+    
+    return dev
+
+@admin_router.delete("/deliverables/{deliverable_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_deliverable(
+    admin: Annotated[Member, Depends(require_super_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+    deliverable_id: UUID,
+):
+    """Delete a deliverable."""
+    result = await db.execute(select(Deliverable).where(Deliverable.id == deliverable_id))
+    dev = result.scalars().one_or_none()
+    if not dev:
+        raise HTTPException(status_code=404, detail="Deliverable not found")
+    await db.delete(dev)
+    await db.commit()
+    await log_admin_action(db, admin.id, "deliverable.delete", "deliverable", deliverable_id)
+
+
 # --- Products & Entitlements ---
 
 @admin_router.get("/products", response_model=list[ProductResponse])
@@ -1377,7 +1465,7 @@ async def create_product(
         name=body.name,
         product_key=body.product_key,
         description=body.description,
-        product_link=body.product_link,
+        deliverable_id=body.deliverable_id,
         is_active=True,
         created_at=now,
         updated_at=now,
@@ -1398,7 +1486,7 @@ async def update_product(
     db: Annotated[AsyncSession, Depends(get_db)],
     admin: Annotated[Member, Depends(require_super_admin)],
 ):
-    """Update a product (e.g. name, description, product_link, is_active). product_key is immutable."""
+    """Update a product (e.g. name, description, deliverable_id, is_active). product_key is immutable."""
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalars().one_or_none()
     if product is None:
@@ -1411,7 +1499,7 @@ async def update_product(
         product.name = body.name
         updates_made = True
     
-    # We allow explicit setting to None or string for description and product_link
+    # We allow explicit setting to None or string for description and deliverable_id
     # We must check if they are included in the fields that were actually set in the request.
     # To do this robustly without model_dump(exclude_unset=True) we just check if it's not None
     # Wait, the frontend might send null. 
@@ -1421,8 +1509,8 @@ async def update_product(
     if "description" in update_data:
         product.description = update_data["description"]
         updates_made = True
-    if "product_link" in update_data:
-        product.product_link = update_data["product_link"]
+    if "deliverable_id" in update_data:
+        product.deliverable_id = update_data["deliverable_id"]
         updates_made = True
     if "is_active" in update_data:
         product.is_active = update_data["is_active"]
@@ -1558,6 +1646,67 @@ async def create_organization_invite(
     
     invite_url = f"{settings.ORG_CONSOLE_URL}/invite?token={invite.id}"
     
+    # Send email
+    from app.services.email_service import send_invite_email
+    from app.services.org_service import get_organization
+    
+    org_name = None
+    if body.organization_id:
+        org = await get_organization(db, body.organization_id)
+        if org:
+            org_name = org.name
+            
+    # Admin is inviter
+    inviter_name = "System Admin"
+    
+    await send_invite_email(
+        to_email=body.email,
+        invite_url=invite_url,
+        inviter_name=inviter_name,
+        role=body.role,
+        expires_at=expires_at,
+        org_name=org_name
+    )
+    
     response = OrganizationInviteResponse.model_validate(invite)
     response.invite_url = invite_url
     return response
+
+
+@admin_router.get("/invites", response_model=list[OrganizationInviteResponse])
+async def get_all_invites(
+    admin: Annotated[Member, Depends(require_super_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> list[OrganizationInviteResponse]:
+    """Get all pending organization invites."""
+    result = await db.execute(
+        select(OrganizationInvite)
+        .where(OrganizationInvite.status == "pending")
+        .order_by(OrganizationInvite.created_at.desc())
+    )
+    invites = result.scalars().all()
+    
+    responses = []
+    for inv in invites:
+        resp = OrganizationInviteResponse.model_validate(inv)
+        resp.invite_url = f"{settings.ORG_CONSOLE_URL}/invite?token={inv.id}"
+        responses.append(resp)
+    return responses
+
+
+@admin_router.delete("/invites/{invite_id}", status_code=204)
+async def delete_invite(
+    invite_id: UUID,
+    admin: Annotated[Member, Depends(require_super_admin)],
+    db: Annotated[AsyncSession, Depends(get_db)],
+):
+    """Revoke/delete an organization invite."""
+    result = await db.execute(select(OrganizationInvite).where(OrganizationInvite.id == invite_id))
+    invite = result.scalars().one_or_none()
+    
+    if not invite:
+        raise HTTPException(status_code=404, detail="Invite not found")
+        
+    await db.delete(invite)
+    await db.commit()
+    await log_admin_action(db, admin.id, "invite.delete", "invite", invite.id, detail=invite.email)

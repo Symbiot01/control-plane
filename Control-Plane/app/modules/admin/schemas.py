@@ -195,12 +195,34 @@ class ProductResponse(BaseModel):
     name: str
     product_key: str
     description: str | None
-    product_link: str | None
+    deliverable_id: UUID | None
     is_active: bool
     created_at: datetime
     updated_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class DeliverableResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str | None
+    deliverable_link: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class DeliverableCreate(BaseModel):
+    name: str = Field(..., min_length=1)
+    description: str | None = None
+    deliverable_link: str | None = None
+
+
+class DeliverableUpdate(BaseModel):
+    name: str | None = Field(None, min_length=1)
+    description: str | None = None
+    deliverable_link: str | None = None
 
 
 class ProductCreate(BaseModel):
@@ -209,7 +231,7 @@ class ProductCreate(BaseModel):
     name: str = Field(..., min_length=1)
     product_key: str = Field(..., min_length=1)
     description: str | None = None
-    product_link: str | None = None
+    deliverable_id: UUID | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -217,7 +239,7 @@ class ProductUpdate(BaseModel):
 
     name: str | None = Field(None, min_length=1)
     description: str | None = None
-    product_link: str | None = None
+    deliverable_id: UUID | None = None
     is_active: bool | None = None
 
 

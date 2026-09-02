@@ -27,7 +27,6 @@ class OrganizationUpdate(BaseModel):
 class EntitlementResponse(BaseModel):
     product_key: str
     product_name: str | None = None
-    product_link: str | None = None
     is_active: bool | None = None
     expires_at: datetime | None = None
     max_compute_units: int | None = None
@@ -40,10 +39,19 @@ class OrganizationProductResponse(BaseModel):
     product_key: str
     name: str
     description: str | None
-    product_link: str | None
     is_active: bool
     expires_at: datetime | None
     max_compute_units: int | None
+
+
+class OrganizationDeliverableResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str | None
+    deliverable_link: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
 
 
 class OrganizationProductAccessResponse(BaseModel):

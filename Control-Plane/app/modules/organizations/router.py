@@ -30,6 +30,7 @@ from app.schemas.organization import (
     OrganizationUpdate,
     OrganizationProductResponse,
     OrganizationProductAccessResponse,
+    OrganizationDeliverableResponse,
     OrganizationResponse,
     OrganizationWithRole,
     UpdateMemberRoleRequest,
@@ -90,13 +91,45 @@ async def get_organization_products(
                 product_key=prod.product_key,
                 name=prod.name,
                 description=prod.description,
-                product_link=prod.product_link,
                 is_active=prod.is_active,
                 expires_at=ent.expires_at,
                 max_compute_units=ent.max_compute_units,
             )
         )
     return products
+
+
+@router.get("/{org_id}/deliverables", response_model=list[OrganizationDeliverableResponse])
+async def get_organization_deliverables(
+    org_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[OrganizationMember, Depends(require_org_operator_for_path)],
+):
+    """Get all unique deliverables this organization has access to."""
+    from app.models.organization_entitlement import OrganizationEntitlement
+    from app.models.product import Product
+    from app.models.deliverable import Deliverable
+    
+    result = await db.execute(
+        select(Deliverable)
+        .join(Product, Product.deliverable_id == Deliverable.id)
+        .join(OrganizationEntitlement, OrganizationEntitlement.product_id == Product.id)
+        .where(OrganizationEntitlement.organization_id == org_id)
+        .group_by(Deliverable.id)
+    )
+    
+    deliverables = []
+    for dev in result.scalars().all():
+        deliverables.append(
+            OrganizationDeliverableResponse(
+                id=dev.id,
+                name=dev.name,
+                description=dev.description,
+                deliverable_link=dev.deliverable_link,
+                created_at=dev.created_at,
+            )
+        )
+    return deliverables
 
 
 @router.get("/my-access/{product_key}", response_model=OrganizationProductAccessResponse)
@@ -203,18 +236,20 @@ async def post_organizations_invite(
         
     body.email = body.email.lower()
         
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    
     existing_invite = await db.execute(
         select(OrganizationInvite)
         .where(
             OrganizationInvite.email == body.email,
             OrganizationInvite.organization_id == org_id,
-            OrganizationInvite.status == "pending"
+            OrganizationInvite.status == "pending",
+            OrganizationInvite.expires_at > now
         )
     )
     if existing_invite.scalars().first():
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An active invite already exists for this email in this organization")
     
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_at = now + timedelta(hours=body.expiration_hours)
     
     invite = OrganizationInvite(
@@ -232,6 +267,27 @@ async def post_organizations_invite(
     await log_audit(db, organization_id=org_id, member_id=membership.member_id, action_key="member.invite", result=f"invited {body.email}")
     
     invite_url = f"{settings.ORG_CONSOLE_URL}/invite?token={invite.id}"
+    
+    # Send email
+    from app.services.email_service import send_invite_email
+    from app.services.org_service import get_organization
+    from app.models.member import Member
+    
+    org = await get_organization(db, org_id)
+    inviter_res = await db.execute(select(Member).where(Member.id == membership.member_id))
+    inviter = inviter_res.scalars().first()
+    
+    inviter_name = inviter.display_name if inviter and inviter.display_name else inviter.email if inviter else "An admin"
+    org_name = org.name if org else "the organization"
+    
+    await send_invite_email(
+        to_email=body.email,
+        invite_url=invite_url,
+        inviter_name=inviter_name,
+        role=body.role,
+        expires_at=expires_at,
+        org_name=org_name
+    )
     
     response = OrganizationInviteResponse.model_validate(invite)
     response.invite_url = invite_url
@@ -318,6 +374,30 @@ async def get_org_invites(
         PendingInviteResponse.model_validate(invite)
         for invite in invites
     ]
+
+@router.delete("/{org_id}/invites/{invite_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_organizations_invite(
+    org_id: UUID,
+    invite_id: UUID,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    membership: Annotated[OrganizationMember, Depends(require_org_owner_for_path)],
+):
+    """Revoke a pending invite (owner only)."""
+    result = await db.execute(
+        select(OrganizationInvite).where(
+            OrganizationInvite.id == invite_id,
+            OrganizationInvite.organization_id == org_id,
+            OrganizationInvite.status == "pending"
+        )
+    )
+    invite = result.scalars().first()
+    
+    if not invite:
+        raise HTTPException(status_code=404, detail="Pending invite not found")
+        
+    await db.delete(invite)
+    await db.commit()
+    await log_audit(db, organization_id=org_id, member_id=membership.member_id, action_key="member.invite_revoked", result=f"revoked invite for {invite.email}")
 
 
 @router.get("/{org_id}/audit-logs", response_model=list[AuditLogResponse])

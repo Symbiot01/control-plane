@@ -44,7 +44,6 @@ async def get_members_me(
                 EntitlementResponse(
                     product_key=prod.product_key,
                     product_name=prod.name,
-                    product_link=prod.product_link,
                     is_active=prod.is_active,
                     expires_at=ent.expires_at,
                     max_compute_units=ent.max_compute_units,
