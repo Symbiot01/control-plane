@@ -41,6 +41,8 @@ export const adminCreateOrganization = (data: { name: string; slug?: string; own
   apiClient<OrganizationResponse>(`${A}/organizations`, { method: 'POST', body: JSON.stringify(data) });
 export const createAdminInvite = (data: import('@/types/api').InviteOrgRequest) =>
   apiClient<import('@/types/api').InviteOrgResponse>(`${A}/invites`, { method: 'POST', body: JSON.stringify(data) });
+export const getAdminPendingInvites = () => apiClient<any[]>(`${A}/invites`);
+export const revokeAdminInvite = (id: string) => apiClient(`${A}/invites/${id}`, { method: 'DELETE' });
 export const getAdminOrganization = (id: string) => apiClient<OrganizationResponse>(`${A}/organizations/${id}`);
 export const patchAdminOrganization = (id: string, data: Partial<OrganizationResponse>) =>
   apiClient<OrganizationResponse>(`${A}/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
@@ -129,6 +131,15 @@ export const grantEntitlement = (orgId: string, data: import('@/types/api').Enti
   apiClient(`${A}/organizations/${orgId}/entitlements`, { method: 'POST', body: JSON.stringify(data) });
 export const revokeEntitlement = (orgId: string, productKey: string) =>
   apiClient(`${A}/organizations/${orgId}/entitlements/${productKey}`, { method: 'DELETE' });
+
+// Deliverables
+export const getAdminDeliverables = () => apiClient<import('@/types/api').DeliverableResponse[]>(`${A}/deliverables`);
+export const createAdminDeliverable = (data: import('@/types/api').DeliverableCreate) =>
+  apiClient<import('@/types/api').DeliverableResponse>(`${A}/deliverables`, { method: 'POST', body: JSON.stringify(data) });
+export const updateAdminDeliverable = (id: string, data: import('@/types/api').DeliverableUpdate) =>
+  apiClient<import('@/types/api').DeliverableResponse>(`${A}/deliverables/${id}`, { method: 'PATCH', body: JSON.stringify(data) });
+export const deleteAdminDeliverable = (id: string) =>
+  apiClient(`${A}/deliverables/${id}`, { method: 'DELETE' });
 
 // Actions (Services)
 export const getAdminActions = () => apiClient<import('@/types/api').ActionResponse[]>(`${A}/actions`);

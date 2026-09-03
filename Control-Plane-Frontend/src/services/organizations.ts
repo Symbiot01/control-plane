@@ -17,8 +17,8 @@ export const getMyOrganizations = () =>
 export const getOrganization = (orgId: string) =>
   apiClient<OrganizationResponse>(`/organizations/${orgId}`);
 
-export const getOrganizationProducts = (orgId: string) =>
-  apiClient<ProductResponse[]>(`/organizations/${orgId}/products`);
+export const getOrganizationDeliverables = (orgId: string) =>
+  apiClient<import('@/types/api').DeliverableResponse[]>(`/organizations/${orgId}/deliverables`);
 
 export const updateOrganization = (orgId: string, data: { name?: string }) =>
   apiClient<OrganizationResponse>(`/organizations/${orgId}`, {
@@ -55,3 +55,6 @@ export const getAuditLogs = (orgId: string) =>
 
 export const getInvites = (orgId: string) =>
   apiClient<any[]>(`/organizations/${orgId}/invites`);
+
+export const revokeInvite = (orgId: string, inviteId: string) =>
+  apiClient<void>(`/organizations/${orgId}/invites/${inviteId}`, { method: 'DELETE' });

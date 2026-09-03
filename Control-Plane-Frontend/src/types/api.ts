@@ -31,7 +31,6 @@ export interface MemberProfile {
 export interface Entitlement {
   product_key: string;
   product_name?: string | null;
-  product_link?: string | null;
   is_active?: boolean | null;
   expires_at: string | null;
   max_compute_units: number | null;
@@ -282,7 +281,7 @@ export interface ProductResponse {
   name: string;
   product_key: string;
   description?: string;
-  product_link?: string | null;
+  deliverable_id?: string | null;
   is_active?: boolean;
   expires_at?: string | null;
   max_compute_units?: number | null;
@@ -293,14 +292,34 @@ export interface ProductCreate {
   name: string;
   product_key: string;
   description?: string;
-  product_link?: string | null;
+  deliverable_id?: string | null;
 }
 
 export interface ProductUpdate {
   name?: string;
   description?: string | null;
-  product_link?: string | null;
+  deliverable_id?: string | null;
   is_active?: boolean;
+}
+
+export interface DeliverableResponse {
+  id: string;
+  name: string;
+  description?: string | null;
+  deliverable_link?: string | null;
+  created_at: string;
+}
+
+export interface DeliverableCreate {
+  name: string;
+  description?: string | null;
+  deliverable_link?: string | null;
+}
+
+export interface DeliverableUpdate {
+  name?: string;
+  description?: string | null;
+  deliverable_link?: string | null;
 }
 
 export interface EntitlementGrantRequest {
