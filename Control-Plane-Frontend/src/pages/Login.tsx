@@ -6,15 +6,13 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Shield } from 'lucide-react';
+import { Shield, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
-  const { user, levelOfAccess, hasPendingInvites, loading, error, signIn, signUp, signInWithGoogle } = useAuth();
+  const { user, levelOfAccess, hasPendingInvites, loading, error, signIn, signInWithGoogle } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [firstName, setFirstName] = useState('');
-  const [lastName, setLastName] = useState('');
-  const [isSignUp, setIsSignUp] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
 
   if (user) {
     if (hasPendingInvites) {
@@ -34,11 +32,7 @@ export default function Login() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (isSignUp) {
-      signUp(email, password, firstName, lastName);
-    } else {
-      signIn(email, password);
-    }
+    signIn(email, password);
   };
 
   return (
@@ -50,39 +44,11 @@ export default function Login() {
           </div>
           <CardTitle className="text-xl">MedCore</CardTitle>
           <CardDescription className="text-xs">
-            {isSignUp ? 'Create a new organization account' : 'Organization control console'}
+            Organization control console
           </CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-3">
-            {isSignUp && (
-              <>
-                <div className="space-y-1.5">
-                  <Label htmlFor="firstName" className="text-xs">First Name</Label>
-                  <Input
-                    id="firstName"
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="John"
-                    className="h-9 text-sm"
-                    required
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="lastName" className="text-xs">Last Name</Label>
-                  <Input
-                    id="lastName"
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Doe"
-                    className="h-9 text-sm"
-                    required
-                  />
-                </div>
-              </>
-            )}
             <div className="space-y-1.5">
               <Label htmlFor="email" className="text-xs">Email</Label>
               <Input
@@ -97,32 +63,33 @@ export default function Login() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="password" className="text-xs">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="h-9 text-sm"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (showPassword) setShowPassword(false);
+                  }}
+                  className="h-9 text-sm pr-9"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                >
+                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
             {error && (
               <p className="text-xs text-destructive">{error}</p>
             )}
             <Button type="submit" className="w-full h-9 text-sm" disabled={loading}>
-              {loading ? (isSignUp ? 'Signing up…' : 'Signing in…') : (isSignUp ? 'Sign up' : 'Sign in')}
+              {loading ? 'Signing in…' : 'Sign in'}
             </Button>
-            
-            <div className="text-center text-xs text-muted-foreground mt-2">
-              {isSignUp ? "Already have an account? " : "Don't have an account? "}
-              <button 
-                type="button" 
-                onClick={() => setIsSignUp(!isSignUp)} 
-                className="text-primary hover:underline"
-              >
-                {isSignUp ? 'Sign in' : 'Sign up'}
-              </button>
-            </div>
           </form>
 
           <div className="relative my-4">

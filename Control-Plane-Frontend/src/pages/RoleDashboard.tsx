@@ -3,7 +3,7 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '@/components/contexts/AuthContext';
 import { useTheme } from '@/components/theme-provider';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMyProfile, getMyOrganizations, getOrganization, getMembers, getAuditLogs, getOrganizationProducts, getInvites, updateMemberRole, removeMember, updateOrganization } from '@/services/organizations';
+import { getMyProfile, getMyOrganizations, getOrganization, getMembers, getAuditLogs, getOrganizationDeliverables, getInvites, updateMemberRole, removeMember, updateOrganization, revokeInvite } from '@/services/organizations';
 import { useToast } from '@/hooks/use-toast';
 import InviteMemberModal from '@/components/InviteMemberModal';
 import BillingDashboard from '@/components/BillingDashboard';
@@ -38,9 +38,9 @@ export default function RoleDashboard() {
     }
   }, [orgDetail?.name]);
 
-  const { data: products } = useQuery({
-    queryKey: ['orgProducts', orgId],
-    queryFn: () => getOrganizationProducts(orgId as string),
+  const { data: deliverables } = useQuery({
+    queryKey: ['orgDeliverables', orgId],
+    queryFn: () => getOrganizationDeliverables(orgId as string),
     enabled: !!orgId
   });
 
@@ -97,6 +97,31 @@ export default function RoleDashboard() {
     }
   });
 
+  const revokeInviteMutation = useMutation({
+    mutationFn: (inviteId: string) => revokeInvite(orgId!, inviteId),
+    onMutate: async (inviteId) => {
+      await queryClient.cancelQueries({ queryKey: ['invites', orgId] });
+      const previousInvites = queryClient.getQueryData(['invites', orgId]);
+      queryClient.setQueryData(['invites', orgId], (old: any) => 
+        old ? old.filter((i: any) => i.id !== inviteId) : []
+      );
+      return { previousInvites };
+    },
+    onError: (err, newInvite, context) => {
+      if (context?.previousInvites) {
+        queryClient.setQueryData(['invites', orgId], context.previousInvites);
+      }
+      toast({
+        title: "Error",
+        description: "Failed to revoke invite.",
+        variant: "destructive",
+      });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['invites', orgId] });
+    }
+  });
+
   useEffect(() => {
     document.title = 'Medcore';
     const link = document.querySelector("link[rel*='icon']") || document.createElement('link');
@@ -114,7 +139,7 @@ export default function RoleDashboard() {
   return (
     <div className="theme-org flex h-full w-full bg-background text-foreground font-body-md overflow-hidden transition-colors duration-200">
       {/* Sidebar */}
-      <aside className={`flex flex-col transition-all duration-300 bg-card border-r-2 border-border z-50 ${isSidebarCollapsed ? 'w-20' : 'w-52'}`}>
+      <aside className={`flex flex-col transition-all duration-300 bg-card rounded-none border-r-2 border-border z-50 ${isSidebarCollapsed ? 'w-20' : 'w-52'}`}>
         <div className="h-16 flex items-center justify-between px-md border-b-2 border-border shrink-0">
           {!isSidebarCollapsed && (
             <span className="font-headline-lg text-title-md text-foreground dark:!text-[#E4E2E3] tracking-tight uppercase whitespace-nowrap truncate">
@@ -148,7 +173,7 @@ export default function RoleDashboard() {
            <button 
              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
              title="Toggle Appearance"
-             className="w-10 h-10 flex items-center justify-center rounded-none border-2 border-border hover:bg-[#B9CAFE] dark:hover:bg-[#B9CAFE] hover:text-[#273B69] dark:hover:text-[#273B69] transition-all text-foreground active:translate-y-1 !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+             className="w-10 h-10 flex items-center justify-center rounded-md border-2 border-border hover:bg-[#B9CAFE] dark:hover:bg-[#B9CAFE] hover:text-[#273B69] dark:hover:text-[#273B69] transition-all text-foreground active:translate-y-1 !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
            >
              <span className="material-symbols-outlined text-lg">
                {theme === 'dark' ? 'light_mode' : 'dark_mode'}
@@ -158,7 +183,7 @@ export default function RoleDashboard() {
            <button 
              onClick={() => void signOut()}
              title="Sign Out"
-             className="w-10 h-10 flex items-center justify-center rounded-none border-2 border-border hover:bg-[#FF857F] dark:hover:bg-[#FF857F] hover:text-[#611F1D] dark:hover:text-[#611F1D] transition-colors text-foreground active:translate-y-1 !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
+             className="w-10 h-10 flex items-center justify-center rounded-md border-2 border-border hover:bg-[#FF857F] dark:hover:bg-[#FF857F] hover:text-[#611F1D] dark:hover:text-[#611F1D] transition-colors text-foreground active:translate-y-1 !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)] hover:shadow-none"
            >
              <span className="material-symbols-outlined text-lg">logout</span>
            </button>
@@ -254,14 +279,14 @@ export default function RoleDashboard() {
                     </div>
                   </div>
                   <div className="space-y-sm mt-4 flex-1 overflow-y-auto pr-2 min-h-0">
-                    {products && products.length > 0 ? (
-                      products.map((product: any, idx: number) => (
+                    {deliverables && deliverables.length > 0 ? (
+                      deliverables.map((deliverable: any, idx: number) => (
                         <ProductItem 
-                          key={product.product_key} 
+                          key={deliverable.id} 
                           icon="deployed_code" 
-                          name={product.product_key} 
-                          status={product.is_active ? "Active" : "Inactive"} 
-                          active={product.is_active ?? false} 
+                          name={deliverable.name} 
+                          status="Active" 
+                          active={true} 
                           color={idx % 2 === 0 ? "mint" : "sage"} 
                         />
                       ))
@@ -437,21 +462,32 @@ export default function RoleDashboard() {
                         <th className="py-3 px-4 font-bold tracking-wider border-r-2 border-border">Email</th>
                         <th className="py-3 px-4 font-bold tracking-wider border-r-2 border-border">Role</th>
                         <th className="py-3 px-4 font-bold tracking-wider border-r-2 border-border">Status</th>
-                        <th className="py-3 px-4 font-bold tracking-wider">Date Sent</th>
+                        <th className="py-3 px-4 font-bold tracking-wider border-r-2 border-border">Date Sent</th>
+                        <th className="py-3 px-4 font-bold tracking-wider text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody>
                       {invitesList?.map((invite: any) => (
-                        <tr key={invite.id} className="border-b-2 border-border hover:bg-muted/50 transition-colors">
+                        <tr key={invite.id} className="border-b-2 border-border hover:bg-muted/50 transition-colors group">
                           <td className="py-3 px-4 font-body-sm text-foreground font-bold border-r-2 border-border">{invite.email}</td>
                           <td className="py-3 px-4 font-mono text-xs uppercase font-bold border-r-2 border-border">{invite.role}</td>
                           <td className="py-3 px-4 font-mono text-xs uppercase font-bold border-r-2 border-border text-yellow-600 dark:text-yellow-400">{invite.status || 'Pending'}</td>
-                          <td className="py-3 px-4 font-mono text-xs text-muted-foreground">{invite.created_at ? new Date(invite.created_at).toLocaleDateString() : 'N/A'}</td>
+                          <td className="py-3 px-4 font-mono text-xs text-muted-foreground border-r-2 border-border">{invite.created_at ? new Date(invite.created_at).toLocaleDateString() : 'N/A'}</td>
+                          <td className="py-3 px-4 flex items-center justify-end">
+                            <button
+                              onClick={() => revokeInviteMutation.mutate(invite.id)}
+                              disabled={revokeInviteMutation.isPending}
+                              className="w-8 h-8 flex items-center justify-center bg-[#FF857F] text-[#611F1D] border-2 border-border rounded-none !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] hover:translate-y-0.5 hover:!shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] opacity-0 group-hover:opacity-100 transition-opacity disabled:cursor-not-allowed"
+                              title="Revoke Invite"
+                            >
+                              <span className="material-symbols-outlined text-sm">delete</span>
+                            </button>
+                          </td>
                         </tr>
                       ))}
                       {(!invitesList || invitesList.length === 0) && (
                         <tr>
-                          <td colSpan={4} className="py-8 text-center text-muted-foreground font-mono uppercase font-bold border-t-2 border-border">No pending invites</td>
+                          <td colSpan={5} className="py-8 text-center text-muted-foreground font-mono uppercase font-bold border-t-2 border-border">No pending invites</td>
                         </tr>
                       )}
                     </tbody>
@@ -469,48 +505,31 @@ export default function RoleDashboard() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {products && products.length > 0 ? (
-                  products.map((product: any) => {
-                    const isExpired = product.expires_at ? new Date(product.expires_at).getTime() < Date.now() : false;
-                    const isActive = product.is_active;
+                {deliverables && deliverables.length > 0 ? (
+                  deliverables.map((deliverable: any) => {
+                    const isActive = true; // Deliverables are always active in this context
 
                     return (
-                      <div key={product.product_key} className="bg-card rounded-none border-4 border-border p-6 flex flex-col transition-colors duration-200 !shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:!shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] dark:hover:!shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
+                      <div key={deliverable.id} className="bg-card rounded-none border-4 border-border p-6 flex flex-col transition-colors duration-200 !shadow-[8px_8px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[8px_8px_0px_0px_rgba(0,0,0,1)] hover:-translate-y-1 hover:!shadow-[12px_12px_0px_0px_rgba(15,23,42,1)] dark:hover:!shadow-[12px_12px_0px_0px_rgba(0,0,0,1)]">
                         <div className="flex justify-between items-start mb-4 gap-4">
                           <h2 className="font-display-lg text-2xl font-bold uppercase tracking-tight text-foreground dark:!text-[#E4E2E3] truncate">
-                            {product.name}
+                            {deliverable.name}
                           </h2>
                           <div className="flex flex-col gap-2 shrink-0 items-end">
-                            {!isActive ? (
-                              <span className="px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider bg-muted text-muted-foreground border-2 border-border !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                                Maintenance
-                              </span>
-                            ) : isExpired ? (
-                              <span className="px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider bg-[#FF857F] text-[#611F1D] border-2 border-border !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
-                                Expired
-                              </span>
-                            ) : (
                               <span className="px-3 py-1 font-mono text-xs font-bold uppercase tracking-wider bg-[#9CF1C7] text-[#0A5636] border-2 border-border !shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[2px_2px_0px_0px_rgba(0,0,0,1)]">
                                 Active
                               </span>
-                            )}
-                            
-                            {product.max_compute_units !== null && product.max_compute_units !== undefined && (
-                              <span className="px-2 py-0.5 font-mono text-[10px] font-bold uppercase bg-[#E8E6FF] text-[#2F2B66] border-2 border-border">
-                                {product.max_compute_units.toLocaleString()} CU Limit
-                              </span>
-                            )}
                           </div>
                         </div>
 
                         <p className="font-body-sm text-muted-foreground flex-1 mb-6 line-clamp-3">
-                          {product.description || "No description provided."}
+                          {deliverable.description || "No description provided."}
                         </p>
                         
                         <div className="mt-auto pt-4 border-t-2 border-border">
-                          {(isActive && !isExpired && product.product_link) ? (
+                          {(isActive && deliverable.deliverable_link) ? (
                             <a 
-                              href={product.product_link}
+                              href={deliverable.deliverable_link.startsWith('http') ? deliverable.deliverable_link : `https://${deliverable.deliverable_link}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="w-full py-3 flex items-center justify-center gap-2 border-2 border-border font-bold uppercase tracking-wider text-white bg-black dark:text-[#223243] dark:bg-[#B8C8DE] transition-colors !shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] dark:!shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:translate-y-1 hover:!shadow-none"
@@ -674,7 +693,7 @@ function ProductItem({ icon, name, status, active, color }: { icon: string, name
         : 'bg-muted border-border border-dashed opacity-70 cursor-not-allowed'
     }`}>
       <div className="flex items-center gap-2">
-        <div className={`w-8 h-8 rounded-none flex items-center justify-center border-2 border-border ${bgColor} ${textColor}`}>
+        <div className={`w-8 h-8 rounded-md flex items-center justify-center border-2 border-border ${bgColor} ${textColor}`}>
           <span className="material-symbols-outlined text-[18px]">{icon}</span>
         </div>
         <div>
