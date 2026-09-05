@@ -8,7 +8,8 @@ import {
   getAdminActions,
   createAdminAction,
   updateAdminAction,
-  deleteAdminAction
+  deleteAdminAction,
+  getAdminDeliverables
 } from '@/services/admin';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,7 @@ import { Plus, Trash2, Edit2, Globe } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { ProductCreate, ProductUpdate, ProductResponse, ActionResponse, ActionCreate, ActionUpdate } from '@/types/api';
+import type { ProductCreate, ProductUpdate, ProductResponse, ActionResponse, ActionCreate, ActionUpdate, DeliverableResponse } from '@/types/api';
 
 function ServiceDialog({ 
   product, 
@@ -215,17 +216,19 @@ function ServiceDialog({
 function ProductEditDialog({
   product,
   onClose,
-  open
+  open,
+  deliverables
 }: {
   product: ProductResponse;
   onClose: () => void;
   open: boolean;
+  deliverables: DeliverableResponse[];
 }) {
   const qc = useQueryClient();
   const [formData, setFormData] = useState({
     name: product.name,
     description: product.description || '',
-    product_link: product.product_link || '',
+    deliverable_id: product.deliverable_id || 'none',
     is_active: product.is_active !== undefined ? product.is_active : true,
   });
 
@@ -244,7 +247,7 @@ function ProductEditDialog({
     const payload = {
       name: formData.name,
       description: formData.description || null,
-      product_link: formData.product_link?.trim() || null,
+      deliverable_id: formData.deliverable_id === 'none' ? null : formData.deliverable_id,
       is_active: formData.is_active
     };
     updateMut.mutate(payload);
@@ -275,12 +278,21 @@ function ProductEditDialog({
             />
           </div>
           <div className="space-y-2">
-            <Label htmlFor="edit_link">Product Link (optional)</Label>
-            <Input
-              id="edit_link"
-              value={formData.product_link}
-              onChange={(e) => setFormData({ ...formData, product_link: e.target.value })}
-            />
+            <Label htmlFor="edit_link">Assigned Deliverable (optional)</Label>
+            <Select
+              value={formData.deliverable_id}
+              onValueChange={(val) => setFormData({ ...formData, deliverable_id: val })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select a Deliverable" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">None</SelectItem>
+                {deliverables?.map(d => (
+                  <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
           <div className="flex items-center justify-between p-3 border rounded-lg bg-muted/20">
             <div className="space-y-0.5">
@@ -306,11 +318,13 @@ function ProductEditDialog({
   );
 }
 
-function ProductCard({ product, actions }: { product: ProductResponse; actions: ActionResponse[] }) {
+function ProductCard({ product, actions, deliverables }: { product: ProductResponse; actions: ActionResponse[]; deliverables: DeliverableResponse[] }) {
   const qc = useQueryClient();
   const [serviceDialogOpen, setServiceDialogOpen] = useState(false);
   const [productEditOpen, setProductEditOpen] = useState(false);
   const [editingAction, setEditingAction] = useState<ActionResponse | null>(null);
+
+  const deliverable = deliverables.find(d => d.id === product.deliverable_id);
 
   const deleteProductMut = useMutation({
     mutationFn: (id: string) => deleteAdminProduct(id),
@@ -371,10 +385,10 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
                   <Badge variant="outline" className="text-[9px] uppercase border-destructive/50 text-destructive px-1 py-0 h-4">Inactive</Badge>
                 )}
               </div>
-              {product.product_link && (
-                <a href={product.product_link} target="_blank" rel="noopener noreferrer" className="text-[11px] text-muted-foreground hover:text-primary flex items-center gap-1 w-fit transition-colors group-hover/card:text-primary/70">
-                  <Globe className="h-3 w-3" /> {product.product_link.replace(/^https?:\/\//, '')}
-                </a>
+              {deliverable && (
+                <div className="text-[11px] text-muted-foreground flex items-center gap-1 w-fit transition-colors group-hover/card:text-primary/70">
+                  <Globe className="h-3 w-3" /> Part of: {deliverable.name}
+                </div>
               )}
             </div>
             <div className="flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity">
@@ -417,7 +431,7 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
               </Button>
             </div>
             
-            <div className="space-y-0.5 flex-1 overflow-y-auto pr-1">
+            <div className="space-y-0.5 flex-1 overflow-y-auto no-scrollbar">
               {productActions.length === 0 ? (
                 <div className="text-xs text-muted-foreground/50 italic py-2">
                   No services configured.
@@ -460,6 +474,7 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
           open={productEditOpen}
           onClose={() => setProductEditOpen(false)}
           product={product}
+          deliverables={deliverables}
         />
       )}
     </>
@@ -468,7 +483,7 @@ function ProductCard({ product, actions }: { product: ProductResponse; actions: 
 
 export default function AdminProducts() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [newProduct, setNewProduct] = useState<ProductCreate>({ name: '', product_key: '', description: '', product_link: '' });
+  const [newProduct, setNewProduct] = useState<ProductCreate>({ name: '', product_key: '', description: '', deliverable_id: 'none' });
   const qc = useQueryClient();
 
   const { data: products, isLoading: productsLoading, isError, error } = useQuery({
@@ -481,13 +496,18 @@ export default function AdminProducts() {
     queryFn: getAdminActions,
   });
 
+  const { data: deliverables, isLoading: deliverablesLoading } = useQuery({
+    queryKey: ['admin', 'deliverables'],
+    queryFn: getAdminDeliverables,
+  });
+
   const createMut = useMutation({
     mutationFn: (data: ProductCreate) => createAdminProduct(data),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['admin', 'products'] });
       toast({ title: 'Product created' });
       setIsCreateOpen(false);
-      setNewProduct({ name: '', product_key: '', description: '', product_link: '' });
+      setNewProduct({ name: '', product_key: '', description: '', deliverable_id: 'none' });
     },
     onError: (err: Error) => {
       toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -500,13 +520,13 @@ export default function AdminProducts() {
     
     const payload: ProductCreate = {
       ...newProduct,
-      product_link: newProduct.product_link?.trim() || null
+      deliverable_id: newProduct.deliverable_id === 'none' ? null : newProduct.deliverable_id
     };
     
     createMut.mutate(payload);
   };
 
-  const isLoading = productsLoading || actionsLoading;
+  const isLoading = productsLoading || actionsLoading || deliverablesLoading;
 
   return (
     <div className="space-y-6">
@@ -556,13 +576,21 @@ export default function AdminProducts() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="product_link">Product Link (optional)</Label>
-                <Input
-                  id="product_link"
-                  placeholder="e.g. https://my-app.com"
-                  value={newProduct.product_link || ''}
-                  onChange={(e) => setNewProduct({ ...newProduct, product_link: e.target.value })}
-                />
+                <Label htmlFor="deliverable_id">Assigned Deliverable (optional)</Label>
+                <Select
+                  value={newProduct.deliverable_id || 'none'}
+                  onValueChange={(val) => setNewProduct({ ...newProduct, deliverable_id: val })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select a Deliverable" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    {deliverables?.map(d => (
+                      <SelectItem key={d.id} value={d.id}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)}>
@@ -594,7 +622,7 @@ export default function AdminProducts() {
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {products.map((p) => (
-            <ProductCard key={p.id} product={p} actions={actions || []} />
+            <ProductCard key={p.id} product={p} actions={actions || []} deliverables={deliverables || []} />
           ))}
         </div>
       )}

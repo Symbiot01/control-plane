@@ -11,7 +11,9 @@ import {
   createAdminInvite,
   getAdminPlans,
   scrubOrganization,
-  hardDeleteOrganization
+  hardDeleteOrganization,
+  getAdminPendingInvites,
+  revokeAdminInvite
 } from '@/services/admin';
 import { Card, CardContent } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -430,10 +432,19 @@ export default function AdminOrganizations() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const { data: orgs, isLoading } = useQuery({
+  const { data: orgs, isLoading: isOrgsLoading } = useQuery({
     queryKey: ['admin', 'organizations', search, statusFilter],
     queryFn: () => getAdminOrganizations({ search, status: statusFilter === 'all' ? '' : statusFilter }),
+    enabled: statusFilter !== 'pending',
   });
+
+  const { data: pendingInvites, isLoading: isInvitesLoading } = useQuery({
+    queryKey: ['admin', 'invites', search],
+    queryFn: () => getAdminPendingInvites(),
+    enabled: statusFilter === 'pending',
+  });
+
+  const isLoading = isOrgsLoading || isInvitesLoading;
 
   const { data: products } = useQuery({ queryKey: ['admin', 'products'], queryFn: getAdminProducts });
 
@@ -473,6 +484,15 @@ export default function AdminOrganizations() {
       toast({ title: 'Organization suspended' }); 
     },
     onError: (err: Error) => toast({ title: 'Error suspending organization', description: err.message, variant: 'destructive' }),
+  });
+
+  const revokeInviteMut = useMutation({
+    mutationFn: revokeAdminInvite,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin', 'invites'] });
+      toast({ title: 'Invite revoked' });
+    },
+    onError: (err: Error) => toast({ title: 'Error revoking invite', description: err.message, variant: 'destructive' })
   });
 
   if (isLoading) return <div className="space-y-4"><Skeleton className="h-8 w-48" /><Skeleton className="h-64" /></div>;
@@ -546,54 +566,91 @@ export default function AdminOrganizations() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead className="text-xs font-semibold text-foreground">Name</TableHead>
-                <TableHead className="text-xs font-semibold text-foreground">Products</TableHead>
-                <TableHead className="text-xs w-32" />
+                {statusFilter === 'pending' ? (
+                  <>
+                    <TableHead className="text-xs font-semibold text-foreground">Email</TableHead>
+                    <TableHead className="text-xs font-semibold text-foreground">Role</TableHead>
+                    <TableHead className="text-xs font-semibold text-foreground">Created</TableHead>
+                    <TableHead className="text-xs font-semibold text-foreground">Expires</TableHead>
+                    <TableHead className="text-xs w-32" />
+                  </>
+                ) : (
+                  <>
+                    <TableHead className="text-xs font-semibold text-foreground">Name</TableHead>
+                    <TableHead className="text-xs font-semibold text-foreground">Products</TableHead>
+                    <TableHead className="text-xs w-32" />
+                  </>
+                )}
               </TableRow>
             </TableHeader>
             <TableBody>
-              {orgs?.map((org: { id: string; name: string; status: string; entitlements: { product_key: string }[] }) => (
-                <TableRow key={org.id}>
-                  <TableCell className="text-sm font-medium">
-                    <Link to={`/admin/organizations/${org.id}`} className="text-primary hover:underline font-semibold">
-                      {org.name}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-2">
-                      {(org.entitlements || []).length === 0 ? (
-                        <span className="text-xs text-muted-foreground">No products</span>
-                      ) : (
-                        (org.entitlements || []).map((ent: { product_key: string }) => {
-                          const productName = products?.find((p: { product_key: string; name: string }) => p.product_key === ent.product_key)?.name || ent.product_key;
-                          return (
-                            <Badge key={ent.product_key} variant="secondary" className="flex items-center gap-1 font-mono text-[10px] pr-1">
-                              {productName}
-                              <div 
-                                role="button"
-                                onClick={() => revokeMut.mutate({ orgId: org.id, productKey: ent.product_key })}
-                                className="w-4 h-4 rounded-full hover:bg-destructive/20 hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
-                                title="Revoke product"
-                              >
-                                <X className="w-3 h-3" />
-                              </div>
-                            </Badge>
-                          );
-                        })
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex items-center justify-end gap-3">
-                      <DeleteOrgDialog org={org} onDeleted={() => qc.invalidateQueries({ queryKey: ['admin', 'organizations'] })} />
-                      <AddProductDialog 
-                        orgId={org.id} 
-                        onGranted={() => qc.invalidateQueries({ queryKey: ['admin', 'organizations'] })} 
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
+              {statusFilter === 'pending' ? (
+                pendingInvites?.map((invite: any) => (
+                  <TableRow key={invite.id} className="group">
+                    <TableCell className="text-sm font-medium">{invite.email}</TableCell>
+                    <TableCell><Badge variant="secondary" className="capitalize">{invite.role}</Badge></TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{new Date(invite.created_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">{new Date(invite.expires_at).toLocaleDateString()}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Button 
+                          variant="ghost" 
+                          size="sm" 
+                          className="h-7 w-7 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                          title="Revoke Invite"
+                          onClick={() => revokeInviteMut.mutate(invite.id)}
+                          disabled={revokeInviteMut.isPending}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              ) : (
+                orgs?.map((org: { id: string; name: string; status: string; entitlements: { product_key: string }[] }) => (
+                  <TableRow key={org.id}>
+                    <TableCell className="text-sm font-medium">
+                      <Link to={`/admin/organizations/${org.id}`} className="text-primary hover:underline font-semibold">
+                        {org.name}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-2">
+                        {(org.entitlements || []).length === 0 ? (
+                          <span className="text-xs text-muted-foreground">No products</span>
+                        ) : (
+                          (org.entitlements || []).map((ent: { product_key: string }) => {
+                            const productName = products?.find((p: { product_key: string; name: string }) => p.product_key === ent.product_key)?.name || ent.product_key;
+                            return (
+                              <Badge key={ent.product_key} variant="secondary" className="flex items-center gap-1 font-mono text-[10px] pr-1">
+                                {productName}
+                                <div 
+                                  role="button"
+                                  onClick={() => revokeMut.mutate({ orgId: org.id, productKey: ent.product_key })}
+                                  className="w-4 h-4 rounded-full hover:bg-destructive/20 hover:text-destructive flex items-center justify-center cursor-pointer transition-colors"
+                                  title="Revoke product"
+                                >
+                                  <X className="w-3 h-3" />
+                                </div>
+                              </Badge>
+                            );
+                          })
+                        )}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex items-center justify-end gap-3">
+                        <DeleteOrgDialog org={org} onDeleted={() => qc.invalidateQueries({ queryKey: ['admin', 'organizations'] })} />
+                        <AddProductDialog 
+                          orgId={org.id} 
+                          onGranted={() => qc.invalidateQueries({ queryKey: ['admin', 'organizations'] })} 
+                        />
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </CardContent>

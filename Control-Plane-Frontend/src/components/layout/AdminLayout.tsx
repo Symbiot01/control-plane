@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 const adminLinks = [
   { to: '/admin/dashboard', label: 'Dashboard' },
   { to: '/admin/organizations', label: 'Orgs' },
+  { to: '/admin/deliverables', label: 'Deliverables' },
   { to: '/admin/products', label: 'Products' },
   { to: '/admin/plans', label: 'Plans' },
   { to: '/admin/billing', label: 'Billing' },

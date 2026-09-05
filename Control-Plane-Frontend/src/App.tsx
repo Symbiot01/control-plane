@@ -27,6 +27,7 @@ import AdminInvoiceDetail from "./pages/admin/AdminInvoiceDetail";
 import AdminAccounts from "./pages/admin/AdminAccounts";
 import AuditLog from "./pages/admin/AuditLog";
 import AdminProducts from "./pages/admin/AdminProducts";
+import AdminDeliverables from "./pages/admin/AdminDeliverables";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -104,6 +105,7 @@ const App = () => (
                 <Route path="dashboard" element={<AdminDashboard />} />
                 <Route path="organizations" element={<AdminOrganizations />} />
                 <Route path="organizations/:orgId" element={<AdminOrgDetail />} />
+                <Route path="deliverables" element={<AdminDeliverables />} />
                 <Route path="products" element={<AdminProducts />} />
                 <Route path="plans" element={<AdminPlans />} />
                 <Route path="billing" element={<AdminBilling />} />

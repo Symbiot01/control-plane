@@ -35,16 +35,16 @@
 
   .dark {
     /* Darker, less blue Dark Theme */
-    --background: 210 25% 2%; /* #030405 */
-    --foreground: 226 100% 93%; /* #dde5ff */
-    --card: 220 16% 4%; /* #08090b */
+    --background: 210 0% 7%;
+    --foreground: 226 100% 93%;
+    --card: 220 0% 11%;
     --card-foreground: 226 100% 93%;
-    --popover: 225 16% 5%; /* #0a0b0e */
+    --popover: 225 0% 12%;
     --popover-foreground: 226 100% 93%;
-    --muted: 225 18% 9%; /* #12141a */
+    --muted: 225 0% 25%;
     --muted-foreground: 223 33% 70%; /* #9eabcb */
-    --border: 223 11% 19%; /* #2a2d35 */
-    --input: 223 11% 19%;
+    --border: 223 0% 19%; /* #2a2d35 */
+    --input: 223 0% 19%;
     --ring: 221 100% 87%; /* #bed2ff */
     --primary: 221 100% 87%; /* #bed2ff */
     --primary-foreground: 218 47% 32%; /* #2b4778 */
@@ -53,13 +53,13 @@
     --destructive: 3 100% 71%; /* #ff716c */
     --destructive-foreground: 355 100% 14%; /* #490006 */
     
-    --sidebar-background: 220 23% 3%; /* #050608 */
+    --sidebar-background: 220 0% 3%; /* #050608 */
     --sidebar-foreground: 226 100% 93%;
     --sidebar-primary: 221 100% 87%;
     --sidebar-primary-foreground: 218 47% 32%;
-    --sidebar-accent: 225 18% 9%;
+    --sidebar-accent: 225 0% 9%;
     --sidebar-accent-foreground: 226 100% 93%;
-    --sidebar-border: 223 11% 19%;
+    --sidebar-border: 223 0% 19%;
     --sidebar-ring: 221 100% 87%;
   }
 
@@ -79,16 +79,16 @@
 
   .theme-org.dark, .dark .theme-org {
     /* Custom Theme for Org Dashboard - Dark Mode */
-    --background: 240 5% 8%; /* #131315 */
-    --foreground: 225 7% 78%; /* #C4C6CC */
-    --card: 210 3% 13%; /* #1F2021 */
-    --card-foreground: 225 7% 78%;
-    --muted: 240 1% 47%; /* #777778 */
-    --muted-foreground: 225 7% 78%;
-    --primary: 330 4% 89%; /* #E4E2E3 */
-    --primary-foreground: 209 65% 10%; /* #091A2A */
-    --border: 210 3% 25%; /* #3F4042 - dark gray */
-    --ring: 330 4% 89%;
+    --background: 0 0% 8%;
+    --foreground: 0 0% 80%;
+    --card: 0 0% 13%;
+    --card-foreground: 0 0% 80%;
+    --muted: 0 0% 47%;
+    --muted-foreground: 0 0% 80%;
+    --primary: 0 0% 89%;
+    --primary-foreground: 0 0% 10%;
+    --border: 0 0% 25%;
+    --ring: 0 0% 89%;
   }
 }
 
@@ -132,32 +132,45 @@
 }
 
 @layer components {
-  /* Retro Heavy Brutalist overrides for standard components */
+  /* Modern soft UI overrides for standard components */
   .bg-card, .bg-popover, [role="dialog"], [role="menu"] {
-    @apply border-2 border-slate-900 dark:border-border shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:shadow-[2px_2px_0px_0px_rgba(30,30,40,1)] rounded-none text-foreground !important;
+    @apply border border-border shadow-lg rounded-xl text-foreground !important;
   }
 
   .neo-brutal-input {
-    @apply flex h-10 w-full border-2 border-slate-900 dark:border-border bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-none shadow-[2px_2px_0px_0px_rgba(15,23,42,1)] dark:shadow-[2px_2px_0px_0px_rgba(30,30,40,1)] transition-all duration-200;
+    @apply flex h-10 w-full border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 rounded-lg shadow-sm transition-all duration-200;
   }
   
   .neo-brutal-input:focus {
-    @apply translate-y-[1px] shadow-[1px_1px_0px_0px_rgba(15,23,42,1)] dark:shadow-[1px_1px_0px_0px_rgba(30,30,40,1)];
+    @apply shadow-md;
   }
 
   .neo-brutal-button {
-    @apply inline-flex items-center justify-center whitespace-nowrap bg-primary text-primary-foreground border-2 border-slate-900 dark:border-border rounded-none px-4 py-2 text-sm font-medium transition-all duration-200 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] dark:shadow-[4px_4px_0px_0px_rgba(30,30,40,1)] hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center whitespace-nowrap bg-primary text-primary-foreground border border-transparent rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 shadow-sm hover:bg-primary/90 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
   }
 
   .neo-brutal-button:active {
-    @apply translate-y-1 shadow-none;
+    @apply translate-y-[1px] shadow-sm;
   }
 
   .neo-brutal-button-outline {
-    @apply inline-flex items-center justify-center whitespace-nowrap border-2 border-slate-900 dark:border-border bg-transparent text-foreground rounded-none px-4 py-2 text-sm font-medium transition-all duration-200 shadow-[4px_4px_0px_0px_rgba(15,23,42,1)] dark:shadow-[4px_4px_0px_0px_rgba(30,30,40,1)] hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
+    @apply inline-flex items-center justify-center whitespace-nowrap border border-input bg-transparent text-foreground rounded-lg px-4 py-2 text-sm font-medium transition-all duration-200 shadow-sm hover:bg-accent hover:text-accent-foreground hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50;
   }
 
   .neo-brutal-button-outline:active {
-    @apply translate-y-1 shadow-none;
+    @apply translate-y-[1px] shadow-sm;
+  }
+}
+
+@layer utilities {
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
   }
 }
