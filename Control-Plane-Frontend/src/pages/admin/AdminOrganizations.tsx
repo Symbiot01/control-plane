@@ -298,7 +298,8 @@ function AddProductDialog({ orgId, onGranted }: { orgId: string, onGranted: () =
 
 function InviteOrgDialog() {
   const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState<{ email: string; plan_id: string; expiration_hours: number }>({
+  const [formData, setFormData] = useState<{ name: string; email: string; plan_id: string; expiration_hours: number }>({
+    name: '',
     email: '',
     plan_id: 'none',
     expiration_hours: 72
@@ -312,6 +313,11 @@ function InviteOrgDialog() {
     mutationFn: (data: InviteOrgRequest) => createAdminInvite(data),
     onSuccess: (data) => {
       setInviteUrl(data.invite_url);
+      if (data.email_sent === true) {
+        toast({ title: 'Success', description: 'Invite email sent successfully!' });
+      } else if (data.email_sent === false) {
+        toast({ title: 'Warning', description: 'Invite created, but the email failed to send.', variant: 'destructive' });
+      }
     },
     onError: (err: Error) => toast({ title: 'Error creating invite', description: err.message, variant: 'destructive' })
   });
@@ -328,7 +334,7 @@ function InviteOrgDialog() {
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
     if (!val) {
-      setFormData({ email: '', plan_id: 'none', expiration_hours: 72 });
+      setFormData({ name: '', email: '', plan_id: 'none', expiration_hours: 72 });
       setInviteUrl(null);
       setCopied(false);
     }
@@ -336,9 +342,10 @@ function InviteOrgDialog() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.email) return;
+    if (!formData.email || !formData.name) return;
     
     inviteMut.mutate({
+      name: formData.name,
       email: formData.email,
       organization_id: null,
       plan_id: formData.plan_id === 'none' ? null : formData.plan_id,
@@ -378,6 +385,17 @@ function InviteOrgDialog() {
         ) : (
           <form onSubmit={handleSubmit} className="space-y-4 pt-4">
             <div className="space-y-2">
+              <Label htmlFor="invite_name">Owner Name</Label>
+              <Input 
+                id="invite_name" 
+                type="text" 
+                required 
+                value={formData.name} 
+                onChange={e => setFormData({...formData, name: e.target.value})} 
+                placeholder="Jane Doe" 
+              />
+            </div>
+            <div className="space-y-2">
               <Label htmlFor="invite_email">Owner Email</Label>
               <Input 
                 id="invite_email" 
@@ -414,7 +432,7 @@ function InviteOrgDialog() {
               />
             </div>
             <div className="flex justify-end pt-2">
-              <Button type="submit" disabled={inviteMut.isPending || !formData.email}>
+              <Button type="submit" disabled={inviteMut.isPending || !formData.email || !formData.name}>
                 {inviteMut.isPending ? 'Generating...' : 'Generate Invite Link'}
               </Button>
             </div>

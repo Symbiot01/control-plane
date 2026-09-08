@@ -198,6 +198,7 @@ export interface OrganizationCreate {
 
 export interface InviteOrgRequest {
   email: string;
+  name: string;
   organization_id: string | null;
   plan_id: string | null;
   role: string;
@@ -209,10 +210,12 @@ export interface InviteOrgResponse {
   email: string;
   status: string;
   invite_url: string;
+  email_sent?: boolean;
 }
 
 export interface InviteMemberRequest {
   email: string;
+  name: string;
   role: OrgRole;
   expiration_hours?: number;
 }
@@ -220,6 +223,7 @@ export interface InviteMemberRequest {
 export interface OrganizationInviteResponse {
   id: string;
   email: string;
+  email_sent?: boolean;
   organization_id: string | null;
   plan_id: string | null;
   role: string;
