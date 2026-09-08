@@ -298,11 +298,12 @@ function AddProductDialog({ orgId, onGranted }: { orgId: string, onGranted: () =
 
 function InviteOrgDialog() {
   const [open, setOpen] = useState(false);
-  const [formData, setFormData] = useState<{ name: string; email: string; plan_id: string; expiration_hours: number }>({
+  const [formData, setFormData] = useState<{ name: string; email: string; plan_id: string; expiration_hours: number; initial_credits: number }>({
     name: '',
     email: '',
-    plan_id: 'none',
-    expiration_hours: 72
+    plan_id: '',
+    expiration_hours: 72,
+    initial_credits: 150
   });
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -334,7 +335,7 @@ function InviteOrgDialog() {
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
     if (!val) {
-      setFormData({ name: '', email: '', plan_id: 'none', expiration_hours: 72 });
+      setFormData({ name: '', email: '', plan_id: '', expiration_hours: 72, initial_credits: 150 });
       setInviteUrl(null);
       setCopied(false);
     }
@@ -342,15 +343,16 @@ function InviteOrgDialog() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.email || !formData.name) return;
+    if (!formData.email || !formData.name || !formData.plan_id) return;
     
     inviteMut.mutate({
       name: formData.name,
       email: formData.email,
       organization_id: null,
-      plan_id: formData.plan_id === 'none' ? null : formData.plan_id,
+      plan_id: formData.plan_id,
       role: 'owner',
-      expiration_hours: Number(formData.expiration_hours) || 72
+      expiration_hours: Number(formData.expiration_hours) || 72,
+      initial_credits: Math.round(Number(formData.initial_credits) * 100)
     });
   };
 
@@ -407,13 +409,12 @@ function InviteOrgDialog() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="invite_plan">Billing Plan (Optional)</Label>
+              <Label htmlFor="invite_plan">Billing Plan</Label>
               <Select value={formData.plan_id} onValueChange={(val) => setFormData({...formData, plan_id: val})}>
                 <SelectTrigger>
                   <SelectValue placeholder="Select a plan to attach" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">No Plan</SelectItem>
                   {plans?.map(p => (
                     <SelectItem key={p.id} value={p.id}>{p.name}</SelectItem>
                   ))}
@@ -431,8 +432,21 @@ function InviteOrgDialog() {
                 onChange={e => setFormData({...formData, expiration_hours: parseInt(e.target.value, 10)})} 
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="invite_credits">Initial Credits ($)</Label>
+              <Input 
+                id="invite_credits" 
+                type="number" 
+                min="0" 
+                max="1000"
+                step="1"
+                required 
+                value={formData.initial_credits} 
+                onChange={e => setFormData({...formData, initial_credits: Number(e.target.value)})} 
+              />
+            </div>
             <div className="flex justify-end pt-2">
-              <Button type="submit" disabled={inviteMut.isPending || !formData.email || !formData.name}>
+              <Button type="submit" disabled={inviteMut.isPending || !formData.email || !formData.name || !formData.plan_id}>
                 {inviteMut.isPending ? 'Generating...' : 'Generate Invite Link'}
               </Button>
             </div>

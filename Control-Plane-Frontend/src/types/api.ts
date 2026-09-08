@@ -203,6 +203,7 @@ export interface InviteOrgRequest {
   plan_id: string | null;
   role: string;
   expiration_hours: number;
+  initial_credits?: number;
 }
 
 export interface InviteOrgResponse {
