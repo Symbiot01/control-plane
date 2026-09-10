@@ -253,6 +253,7 @@ async def post_organizations_invite(
     expires_at = now + timedelta(hours=body.expiration_hours)
     
     invite = OrganizationInvite(
+        name=body.name,
         email=body.email,
         organization_id=org_id,
         plan_id=None,
@@ -280,17 +281,19 @@ async def post_organizations_invite(
     inviter_name = inviter.display_name if inviter and inviter.display_name else inviter.email if inviter else "An admin"
     org_name = org.name if org else "the organization"
     
-    await send_invite_email(
+    email_sent = await send_invite_email(
         to_email=body.email,
         invite_url=invite_url,
         inviter_name=inviter_name,
         role=body.role,
         expires_at=expires_at,
+        recipient_name=body.name,
         org_name=org_name
     )
     
     response = OrganizationInviteResponse.model_validate(invite)
     response.invite_url = invite_url
+    response.email_sent = email_sent
     return response
 
 

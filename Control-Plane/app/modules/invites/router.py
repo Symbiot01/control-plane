@@ -134,6 +134,16 @@ async def accept_invite(
         invite.status = "accepted"
         invite.organization_id = org.id
         await db.commit()
+        
+        # Grant initial credits if any
+        if invite.initial_credits and invite.initial_credits > 0:
+            from app.services.credit_service import grant_credits
+            try:
+                await grant_credits(db, org.id, invite.initial_credits, type="grant", reference_id=f"Initial Invite Grant: ${invite.initial_credits / 100:.2f}")
+            except Exception as e:
+                # Log but do not fail the accept
+                pass
+                
         await log_audit(db, organization_id=org.id, member_id=member.id, action_key="member.join", result=f"joined as {invite.role} (created org)")
         
     else:

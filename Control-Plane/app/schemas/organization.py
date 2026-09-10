@@ -85,7 +85,8 @@ class OrganizationWithRole(OrganizationResponse):
 class InviteMemberRequest(BaseModel):
     """Request body for POST /organizations/:id/invite."""
 
-    email: str = Field(..., description="Email of member to invite")
+    name: str = Field(..., description="Name of the person being invited")
+    email: str = Field(..., description="Email address to invite")
     role: OrgRoleLiteral = Field(
         ...,
         description=f"Role to assign ({ROLE_OWNER}, {ROLE_MEMBER}, or {ROLE_VIEWER})",

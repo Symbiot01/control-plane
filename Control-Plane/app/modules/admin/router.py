@@ -1615,24 +1615,27 @@ async def create_organization_invite(
 ) -> OrganizationInviteResponse:
     """Create an organization invite ticket."""
     body.email = body.email.lower()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     existing_invite = await db.execute(
         select(OrganizationInvite)
         .where(
             OrganizationInvite.email == body.email,
             OrganizationInvite.organization_id == body.organization_id,
-            OrganizationInvite.status == "pending"
+            OrganizationInvite.status == "pending",
+            OrganizationInvite.expires_at > now
         )
     )
     if existing_invite.scalars().first():
         raise HTTPException(status_code=400, detail="An active invite already exists for this email with this organization context")
         
-    now = datetime.now(timezone.utc).replace(tzinfo=None)
     expires_at = now + timedelta(hours=body.expiration_hours)
     
     invite = OrganizationInvite(
+        name=body.name,
         email=body.email,
         organization_id=body.organization_id,
         plan_id=body.plan_id,
+        initial_credits=body.initial_credits,
         role=body.role,
         status="pending",
         invited_by=admin.id,
@@ -1659,17 +1662,19 @@ async def create_organization_invite(
     # Admin is inviter
     inviter_name = "System Admin"
     
-    await send_invite_email(
+    email_sent = await send_invite_email(
         to_email=body.email,
         invite_url=invite_url,
         inviter_name=inviter_name,
         role=body.role,
         expires_at=expires_at,
+        recipient_name=body.name,
         org_name=org_name
     )
     
     response = OrganizationInviteResponse.model_validate(invite)
     response.invite_url = invite_url
+    response.email_sent = email_sent
     return response
 
 
