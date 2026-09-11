@@ -1,37 +1,23 @@
 import asyncio
-from app.db.session import async_session_maker
-from app.modules.auth.router import get_or_create_member
+from sqlalchemy import select
+from app.db.session import AsyncSessionLocal
+from app.models.member import Member
+from app.modules.admin.models import SuperAdmin
 
 async def main():
-    async with async_session_maker() as db:
-        try:
-            member = await get_or_create_member(
-                db, 
-                firebase_uid="test_uid_new_123",
-                email="test_new_123@example.com",
-                display_name="Test Name"
-            )
-            print(f"Created member: {member.id}")
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(Member).where(Member.email == 'admin@admin.com'))
+        member = result.scalars().first()
+        
+        admin_result = await db.execute(select(SuperAdmin).where(SuperAdmin.member_id == member.id))
+        sa = admin_result.scalars().first()
+        if sa:
+            print(f"User is superadmin! ID: {sa.id}")
+            level_of_access = "super_admin"
+        else:
+            print("User is NOT superadmin!")
+            level_of_access = "guest"
             
-            # Now let's try to simulate what happens in auth_exchange
-            from app.models.organization_member import OrganizationMember
-            from sqlalchemy import select
-            result = await db.execute(
-                select(OrganizationMember)
-                .where(OrganizationMember.member_id == member.id)
-                .limit(1)
-            )
-            row = result.scalars().first()
-            if row:
-                org_id = str(row.organization_id)
-                level_of_access = row.role
-            else:
-                org_id = None
-                level_of_access = "guest"
-            print(f"Org ID: {org_id}, Access: {level_of_access}")
-        except Exception as e:
-            import traceback
-            traceback.print_exc()
+        print(f"Final level of access: {level_of_access}")
 
-if __name__ == "__main__":
-    asyncio.run(main())
+asyncio.run(main())

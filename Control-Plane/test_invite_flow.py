@@ -35,9 +35,11 @@ async def test_invite_creation():
         
         # Create the invite request body
         req_body = OrganizationInviteCreate(
+            name="New Founder",
             email="new_founder@example.com",
             organization_id=None,
             plan_id=None,
+            initial_credits=15000,
             role="owner",
             expiration_hours=72
         )
