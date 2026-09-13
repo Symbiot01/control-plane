@@ -75,6 +75,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : 'Token exchange failed';
       setState({ user, token: null, levelOfAccess: 'guest', hasPendingInvites: false, loading: false, error: message });
       setAuthToken(null);
+      throw err instanceof Error ? err : new Error(message);
     }
   }, []);
 
@@ -82,7 +83,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(auth, async (user) => {
       if (user) {
         if (!isSigningUp.current) {
-          await doExchange(user);
+          try {
+            await doExchange(user);
+          } catch {
+            // Error is already recorded on auth state.
+          }
         }
       } else {
         setState({ user: null, token: null, levelOfAccess: null, hasPendingInvites: false, loading: false, error: null });
@@ -102,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Sign in failed';
       setState((s) => ({ ...s, loading: false, error: message }));
+      throw err instanceof Error ? err : new Error(message);
     }
   };
 
@@ -119,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Sign up failed';
       setState((s) => ({ ...s, loading: false, error: message }));
+      throw err instanceof Error ? err : new Error(message);
     } finally {
       isSigningUp.current = false;
     }
@@ -131,6 +138,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : 'Google sign in failed';
       setState((s) => ({ ...s, loading: false, error: message }));
+      throw err instanceof Error ? err : new Error(message);
     }
   };
 
