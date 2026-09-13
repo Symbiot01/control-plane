@@ -68,10 +68,7 @@ export default function Login() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (showPassword) setShowPassword(false);
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="h-9 text-sm pr-9"
                   required
                 />
