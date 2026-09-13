@@ -12,4 +12,4 @@ React (Vite) UI for the Control Plane. Configure `VITE_API_BASE_URL` (see `.env`
 - **User menu → Platform admin** (visible if `GET /admin/v1/stats` succeeds).
 - Routes under `/admin/*`: dashboard, organizations (with per-org **Usage (metered)** using `GET /admin/v1/organizations/{id}/usage/summary`), plans, invoices, credits, admins, audit log.
 
-See the control plane [docs/api_endpoints.md](../docs/api_endpoints.md) for API details.
+See the control plane [docs/api_endpoints.md](../Control-Plane/docs/api_endpoints.md) for API details.
