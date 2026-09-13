@@ -30,9 +30,13 @@ export default function Login() {
     return <Navigate to="/overview" replace />;
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    signIn(email, password);
+    try {
+      await signIn(email, password);
+    } catch {
+      // Error is already shown from auth state.
+    }
   };
 
   return (
@@ -99,7 +103,9 @@ export default function Login() {
           <Button
             variant="outline"
             className="w-full h-9 text-sm"
-            onClick={signInWithGoogle}
+            onClick={() => {
+              void signInWithGoogle().catch(() => undefined);
+            }}
             disabled={loading}
           >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
