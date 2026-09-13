@@ -160,10 +160,7 @@ export default function InviteSignup() {
                     id="password"
                     type={showPassword ? "text" : "password"}
                     value={password}
-                    onChange={(e) => {
-                      setPassword(e.target.value);
-                      if (showPassword) setShowPassword(false);
-                    }}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="h-9 text-sm transition-all duration-200 pr-9"
                     required
                   />
@@ -250,10 +247,7 @@ export default function InviteSignup() {
                   id="password"
                   type={showPassword ? "text" : "password"}
                   value={password}
-                  onChange={(e) => {
-                    setPassword(e.target.value);
-                    if (showPassword) setShowPassword(false);
-                  }}
+                  onChange={(e) => setPassword(e.target.value)}
                   className="h-9 text-sm transition-all duration-200 pr-9"
                   required
                   minLength={6}
@@ -274,10 +268,7 @@ export default function InviteSignup() {
                   id="confirmPassword"
                   type={showConfirmPassword ? "text" : "password"}
                   value={confirmPassword}
-                  onChange={(e) => {
-                    setConfirmPassword(e.target.value);
-                    if (showConfirmPassword) setShowConfirmPassword(false);
-                  }}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
                   className="h-9 text-sm transition-all duration-200 pr-9"
                   required
                   minLength={6}
