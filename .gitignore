@@ -1,0 +1,21 @@
+# Local secrets and machine-specific files. Nested project gitignores still apply.
+.env
+.env.*
+!.env.example
+!**/.env.example
+
+.venv/
+**/.venv/
+node_modules/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+
+*.log
+error.log
+.cloud-sql-proxy-credentials.json
+tmp_keys/
+**/tmp_keys/
+
+.cursor/
+.DS_Store
